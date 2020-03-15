@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/actgardner/gogen-avro/parser"
-	"github.com/actgardner/gogen-avro/schema"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -57,17 +56,20 @@ func TestIsReadableBy(t *testing.T) {
 
 		// A union can be read with a single type from that union, provided the reader is the "chosen" type
 		{`["double", "string"]`, `"bytes"`, true},
+
+		// An optional union can be read by another optional union
+		{`["null", "string"]`, `["int", "null"]`, true},
 	}
 
 	for i, c := range cases {
 		ns1 := parser.NewNamespace(false)
-		writer, err := ns1.TypeForSchema([]byte(c.writer))
+		writer, err := ns1.ParseSchema([]byte(c.writer))
 		assert.Nil(t, err)
 
 		ns2 := parser.NewNamespace(false)
-		reader, err := ns2.TypeForSchema([]byte(c.reader))
+		reader, err := ns2.ParseSchema([]byte(c.reader))
 		assert.Nil(t, err)
 
-		assert.Equal(t, c.isReadable, writer.IsReadableBy(reader, make(map[schema.QualifiedName]interface{})), "Bug %d", i)
+		assert.Equal(t, c.isReadable, writer.IsReadableBy(reader, make(map[string]bool)), "Bug %d:\n  Writer: %s\n  Reader: %s", i+1, c.writer, c.reader)
 	}
 }

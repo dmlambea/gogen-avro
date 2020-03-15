@@ -21,6 +21,10 @@ type FieldType struct {
 	singleChildComponent
 }
 
+func (t *FieldType) HasDefault() bool {
+	return false
+}
+
 func (t *FieldType) GoType() string {
 	child := t.Type()
 	var str strings.Builder
@@ -54,4 +58,21 @@ func (t *FieldType) OptionalIndex() int {
 
 func (t *FieldType) NonOptionalIndex() int {
 	return t.Type().NonOptionalIndex()
+}
+
+func (t *FieldType) IsReadableBy(other GenericType, visited map[string]bool) bool {
+	return t.Type().IsReadableBy(other, visited)
+}
+
+// TODO check if the names should always bo compared over their public versions
+func (t *FieldType) alsoKnownAs(aka string) bool {
+	if t.Name() == aka {
+		return true
+	}
+	for _, alias := range t.Aliases() {
+		if DefaultNamer.ToPublicName(alias.String()) == aka {
+			return true
+		}
+	}
+	return false
 }

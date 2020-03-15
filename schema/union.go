@@ -33,3 +33,31 @@ func (t *UnionType) IsUnion() bool {
 func (t *UnionType) SerializerMethod() string {
 	return fmt.Sprintf("write%s", t.Name())
 }
+
+func (t *UnionType) IsReadableBy(other GenericType, visited map[string]bool) bool {
+	// Check the optional case, when the field is a null type
+	if other.IsOptional() {
+		return t.IsOptional()
+	}
+
+	u, otherIsUnion := other.(*UnionType)
+
+	// Report if *any* writer type could be deserialized by the reader
+	for _, child := range t.Children() {
+		switch otherIsUnion {
+		case true:
+			for _, otherUnionChild := range u.Children() {
+				// Union children are fields, so their types is what is needed to match
+				otherUnionChildType := otherUnionChild.(*FieldType).Type()
+				if child.IsReadableBy(otherUnionChildType, visited) {
+					return true
+				}
+			}
+		case false:
+			if child.IsReadableBy(other, visited) {
+				return true
+			}
+		}
+	}
+	return false
+}

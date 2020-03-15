@@ -29,6 +29,14 @@ func (t *FixedType) SerializerMethod() string {
 	return fmt.Sprintf("write%s", t.Name())
 }
 
+func (t *FixedType) IsReadableBy(other GenericType, visited map[string]bool) bool {
+	f, ok := other.(*FixedType)
+	if ok {
+		ok = (f.goType == t.goType) && (f.Name() == t.Name())
+	}
+	return ok
+}
+
 func (t *FixedType) isComplex() bool {
 	return true
 }

@@ -29,3 +29,16 @@ type ArrayType struct {
 func (t *ArrayType) SerializerMethod() string {
 	return fmt.Sprintf("write%s", t.Name())
 }
+
+func (t *ArrayType) IsReadableBy(other GenericType, visited map[string]bool) bool {
+	// If both fields are optional, they are compatible
+	if t.IsOptional() && other.IsOptional() {
+		return true
+	}
+
+	if a, otherIsArray := other.(*ArrayType); otherIsArray {
+		return t.Type().IsReadableBy(a.Type(), visited)
+	}
+
+	return t.singleChildComponent.IsReadableBy(other, visited)
+}

@@ -39,6 +39,23 @@ func (t *multiChildComponent) SerializerMethod() string {
 	panic("Complex, multi-child types must implement their own SerializerMethod")
 }
 
+func (t *multiChildComponent) IsReadableBy(other GenericType, visited map[string]bool) bool {
+	if t.GoType() == other.GoType() {
+		return true
+	}
+
+	if u, ok := other.(*UnionType); ok {
+		for _, child := range u.Children() {
+			// Union children are fields, so their types is what is needed to match
+			childType := child.(*FieldType).Type()
+			if t.IsReadableBy(childType, visited) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // *** Complex type implementation
 
 func (t *multiChildComponent) isComplex() bool {

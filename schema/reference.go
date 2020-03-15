@@ -53,30 +53,6 @@ func (r Reference) QName() QName {
 	return r.qname
 }
 
-func (r *Reference) SerializerMethod() string {
-	panic(fmt.Sprintf("This reference %T should have been resolved before", r))
-}
-
-func (r *Reference) IsOptional() bool {
-	panic("Can references hold an optional index??")
-}
-
-func (r *Reference) IsUnion() bool {
-	panic("Can references hold an optional index??")
-}
-
-func (r *Reference) SetOptionalIndex(idx int) {
-	panic("Can references hold an optional index??")
-}
-
-func (r *Reference) OptionalIndex() int {
-	panic("Can references hold an optional index??")
-}
-
-func (r *Reference) NonOptionalIndex() int {
-	panic("Can references hold an optional index??")
-}
-
 func (r Reference) IsUntyped() bool {
 	return r.refType == nil
 }
@@ -101,4 +77,32 @@ func (r *Reference) AddResolver(resolver ReferenceResolver) {
 		panic("Cannot add a nil resolver")
 	}
 	r.resolvers = append(r.resolvers, resolver)
+}
+
+func (r *Reference) SerializerMethod() string {
+	panic(fmt.Sprintf("This reference %T should have been resolved earlier", r))
+}
+
+func (r *Reference) IsReadableBy(other GenericType, visited map[string]bool) bool {
+	panic(fmt.Sprintf("This reference %T should have been resolved earlier", r))
+}
+
+func (r *Reference) IsOptional() bool {
+	panic(fmt.Sprintf("This reference %T should have been resolved earlier", r))
+}
+
+func (r *Reference) IsUnion() bool {
+	panic(fmt.Sprintf("This reference %T should have been resolved earlier", r))
+}
+
+func (r *Reference) SetOptionalIndex(idx int) {
+	panic(fmt.Sprintf("This reference %T should have been resolved earlier", r))
+}
+
+func (r *Reference) OptionalIndex() int {
+	panic(fmt.Sprintf("This reference %T should have been resolved earlier", r))
+}
+
+func (r *Reference) NonOptionalIndex() int {
+	panic(fmt.Sprintf("This reference %T should have been resolved earlier", r))
 }

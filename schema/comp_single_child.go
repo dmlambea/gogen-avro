@@ -20,12 +20,6 @@ type singleChildComponent struct {
 	multiChildComponent
 }
 
-/*
-func (t *singleChildComponent) SerializerMethod() string {
-	return t.Type().SerializerMethod()
-}
-*/
-
 func (t *singleChildComponent) SerializerMethod() string {
 	panic("Complex, single-child types must implement their own SerializerMethod")
 }
