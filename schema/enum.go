@@ -3,49 +3,43 @@ package schema
 import (
 	"fmt"
 	"strings"
-
-	"github.com/actgardner/gogen-avro/generator"
 )
 
-type EnumDefinition struct {
-	qualifiedField
+func NewEnumField(qname QName, symbols []string) *EnumType {
+	t := &EnumType{symbols: make([]string, len(symbols))}
+	for i := range symbols {
+		t.symbols[i] = strings.Title(symbols[i])
+	}
+	t.setQName(qname)
+	return t
+}
+
+var (
+	// Ensure interface implementations
+	_ ComplexType    = &EnumType{}
+	_ DocumentedType = &EnumType{}
+	_ NamespacedType = &EnumType{}
+)
+
+type EnumType struct {
+	namespaceComponent
+	optionalComponent
+	documentComponent
 	symbols []string
-	doc     string
 }
 
-func NewEnumDefinition(qname QualifiedName, aliases []QualifiedName, symbols []string, doc string, definition interface{}) *EnumDefinition {
-	return &EnumDefinition{
-		qualifiedField: newQualifiedField(qname, aliases, definition),
-		symbols:        symbols,
-		doc:            doc,
-	}
+func (t *EnumType) GoType() string {
+	return "int32"
 }
 
-func (e *EnumDefinition) Doc() string {
-	return e.doc
+func (t *EnumType) SerializerMethod() string {
+	return fmt.Sprintf("write%s", t.Name())
 }
 
-func (e *EnumDefinition) Symbols() []string {
-	return e.symbols
+func (t *EnumType) Symbols() []string {
+	return t.symbols
 }
 
-func (e *EnumDefinition) SymbolName(symbol string) string {
-	return generator.ToPublicName(e.GoType() + strings.Title(symbol))
-}
-
-func (s *EnumDefinition) DefaultValue(lvalue string, rvalue interface{}) (string, error) {
-	if _, ok := rvalue.(string); !ok {
-		return "", fmt.Errorf("Expected string as default for field %v, got %q", lvalue, rvalue)
-	}
-
-	return fmt.Sprintf("%v = %v", lvalue, generator.ToPublicName(s.GoType()+strings.Title(rvalue.(string)))), nil
-}
-
-func (s *EnumDefinition) IsReadableBy(d AvroType, visited map[QualifiedName]interface{}) bool {
-	otherEnum, ok := d.(*EnumDefinition)
-	return ok && otherEnum.name == s.name
-}
-
-func (s *EnumDefinition) WrapperType() string {
-	return "types.Int"
+func (t *EnumType) isComplex() bool {
+	return true
 }

@@ -3,7 +3,7 @@ package schema
 import "fmt"
 
 /*
-  A named Reference to a user-defined type (fixed, enum, record). Just a wrapper with a name around a qnamed type.
+  A named Reference to another type (fixed, enum or record). Just a wrapper with a qname around a qnamed type.
   If a reference is created without a defined type, all parsing-time values are returned as invalid values.
   Once the reference gets assigned a type, it triggers its registered resolvers' Resolve(ref) method.
   This is commonly transparent for almost all types, but some other types depend on their children fields for
@@ -13,43 +13,79 @@ import "fmt"
 	- Union types with named-types' members: once all its children refs are triggered, the union gets renamed.
 */
 type Reference struct {
-	refName   QualifiedName
-	refType   QualifiedAvroType
-	resolvers []referenceResolver
+	qname     QName
+	optIndex  int
+	refType   GenericType
+	resolvers []ReferenceResolver
 }
 
-// referenceResolver is an interface with a function that triggers once this
+// ReferenceResolver is an interface with a function that triggers once this
 // reference gets informed about the type it refers to, so no afterwards resolving
 // phase is required.
-type referenceResolver interface {
+type ReferenceResolver interface {
 	Resolve(ref Reference)
 }
 
-const unresolvedFmtString = "unresolved-ref-%s-%s"
-
 var (
 	// Ensure interface implementations
-	_ QualifiedAvroType = &Reference{}
-	_ CompositeType     = &Reference{}
+	_ GenericType = &Reference{}
 )
 
-func NewReference(name QualifiedName, t QualifiedAvroType) *Reference {
-	return &Reference{refName: name, refType: t}
+func NewReference(qname QName, t GenericType) *Reference {
+	return &Reference{
+		qname:   qname,
+		refType: t,
+	}
 }
 
-func (r Reference) RefName() QualifiedName {
-	return r.refName
+func (r Reference) Name() string {
+	return r.qname.String()
 }
 
-func (r Reference) RefType() QualifiedAvroType {
-	return r.refType
+func (r Reference) GoType() string {
+	if r.refType == nil {
+		return "untyped"
+	}
+	return r.refType.GoType()
+}
+
+func (r Reference) QName() QName {
+	return r.qname
+}
+
+func (r *Reference) SerializerMethod() string {
+	panic(fmt.Sprintf("This reference %T should have been resolved before", r))
+}
+
+func (r *Reference) IsOptional() bool {
+	panic("Can references hold an optional index??")
+}
+
+func (r *Reference) IsUnion() bool {
+	panic("Can references hold an optional index??")
+}
+
+func (r *Reference) SetOptionalIndex(idx int) {
+	panic("Can references hold an optional index??")
+}
+
+func (r *Reference) OptionalIndex() int {
+	panic("Can references hold an optional index??")
+}
+
+func (r *Reference) NonOptionalIndex() int {
+	panic("Can references hold an optional index??")
 }
 
 func (r Reference) IsUntyped() bool {
 	return r.refType == nil
 }
 
-func (r *Reference) SetType(t QualifiedAvroType) {
+func (r *Reference) Type() GenericType {
+	return r.refType
+}
+
+func (r *Reference) SetType(t GenericType) {
 	if r.refType != nil {
 		panic("Cannot reassign reference type")
 	}
@@ -60,81 +96,9 @@ func (r *Reference) SetType(t QualifiedAvroType) {
 	}
 }
 
-func (r *Reference) AddResolver(resolver referenceResolver) {
+func (r *Reference) AddResolver(resolver ReferenceResolver) {
 	if resolver == nil {
 		panic("Cannot add a nil resolver")
 	}
 	r.resolvers = append(r.resolvers, resolver)
-}
-
-func (r Reference) Name() string {
-	if r.refType == nil {
-		return fmt.Sprintf(unresolvedFmtString, "name", r.refName)
-	}
-	return r.refType.Name()
-}
-
-func (r Reference) SimpleName() string {
-	if r.refType == nil {
-		return fmt.Sprintf(unresolvedFmtString, "simplename", r.refName)
-	}
-	return r.refType.SimpleName()
-}
-
-func (r Reference) GoType() string {
-	if r.refType == nil {
-		return fmt.Sprintf(unresolvedFmtString, "gotype", r.refName)
-	}
-	return r.refType.GoType()
-}
-
-func (r Reference) IsOptional() bool {
-	return r.refType.IsOptional()
-}
-
-// The name of the method which writes this field onto the wire
-func (r Reference) SerializerMethod() string {
-	if r.refType == nil {
-		return fmt.Sprintf(unresolvedFmtString, "serializermethod", r.refName)
-	}
-	return r.refType.SerializerMethod()
-}
-
-func (r Reference) Definition(scope map[QualifiedName]interface{}) (interface{}, error) {
-	return r.refType.Definition(scope)
-}
-
-func (r Reference) QualifiedName() QualifiedName {
-	return r.refType.QualifiedName()
-}
-
-func (r Reference) Aliases() []QualifiedName {
-	return r.refType.Aliases()
-}
-
-func (r Reference) Children() []AvroType {
-	if ct, ok := r.refType.(CompositeType); ok {
-		return ct.Children()
-	}
-	// References can only point to Definitions and thus have no children
-	// unless they're pointing to composite types
-	return []AvroType{}
-}
-
-func (r Reference) DefaultValue(lvalue string, rvalue interface{}) (string, error) {
-	return r.refType.DefaultValue(lvalue, rvalue)
-}
-
-func (r Reference) WrapperType() string {
-	if r.refType == nil {
-		return fmt.Sprintf(unresolvedFmtString, "wrappertype", r.refName)
-	}
-	return r.refType.WrapperType()
-}
-
-func (r Reference) IsReadableBy(f AvroType, visited map[QualifiedName]interface{}) bool {
-	if ref, ok := f.(*Reference); ok {
-		f = ref.refType
-	}
-	return r.refType.IsReadableBy(f, visited)
 }

@@ -1,35 +1,34 @@
 package schema
 
-import (
-	"fmt"
+import "fmt"
+
+func NewFixedField(qname QName, sizeBytes uint64) *FixedType {
+	t := &FixedType{}
+	t.setQName(qname)
+	t.goType = fmt.Sprintf("[%d]byte", sizeBytes)
+	return t
+}
+
+var (
+	// Ensure interface implementations
+	_ ComplexType    = &FixedType{}
+	_ NamespacedType = &FixedType{}
 )
 
-type FixedDefinition struct {
-	qualifiedField
-	sizeBytes int
+type FixedType struct {
+	namespaceComponent
+	optionalComponent
+	goType string
 }
 
-func NewFixedDefinition(qname QualifiedName, aliases []QualifiedName, sizeBytes int, definition interface{}) *FixedDefinition {
-	return &FixedDefinition{
-		qualifiedField: newQualifiedField(qname, aliases, definition),
-		sizeBytes:      sizeBytes,
-	}
+func (t *FixedType) GoType() string {
+	return t.goType
 }
 
-func (s *FixedDefinition) SizeBytes() int {
-	return s.sizeBytes
+func (t *FixedType) SerializerMethod() string {
+	return fmt.Sprintf("write%s", t.Name())
 }
 
-func (s *FixedDefinition) DefaultValue(lvalue string, rvalue interface{}) (string, error) {
-	if _, ok := rvalue.(string); !ok {
-		return "", fmt.Errorf("Expected string as default for field %v, got %q", lvalue, rvalue)
-	}
-	return fmt.Sprintf("copy(%v[:], []byte(%q))", lvalue, rvalue), nil
-}
-
-func (s *FixedDefinition) IsReadableBy(d AvroType, visited map[QualifiedName]interface{}) bool {
-	if fixed, ok := d.(*FixedDefinition); ok {
-		return fixed.sizeBytes == s.sizeBytes && fixed.name == s.name
-	}
-	return false
+func (t *FixedType) isComplex() bool {
+	return true
 }
