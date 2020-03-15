@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"fmt"
 	"io"
 	"math"
 )
@@ -12,6 +13,28 @@ type StringWriter interface {
 type ByteWriter interface {
 	Grow(int)
 	WriteByte(byte) error
+}
+
+// Generic writer for primitive types
+func WritePrimitive(p interface{}, w io.Writer) error {
+	switch t := p.(type) {
+	case bool:
+		return WriteBool(t, w)
+	case []byte:
+		return WriteBytes(t, w)
+	case float64:
+		return WriteDouble(t, w)
+	case int32:
+		return WriteInt(t, w)
+	case int64:
+		return WriteLong(t, w)
+	case float32:
+		return WriteFloat(t, w)
+	case string:
+		return WriteString(t, w)
+	default:
+		return fmt.Errorf("unknown primitive type %T", t)
+	}
 }
 
 func WriteBool(r bool, w io.Writer) error {
