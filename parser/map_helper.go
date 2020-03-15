@@ -1,37 +1,34 @@
 package parser
 
-func getMapString(m map[string]interface{}, key string) (string, error) {
+func stringFromMap(m map[string]interface{}, key string) (string, error) {
 	val, ok := m[key]
 	if !ok {
 		return "", NewRequiredMapKeyError(key)
 	}
-	typedVal, ok := val.(string)
-	if !ok {
-		return "", NewWrongMapValueTypeError(key, "string", val)
+	if typedVal, ok := val.(string); ok {
+		return typedVal, nil
 	}
-	return typedVal, nil
+	return "", NewWrongMapValueTypeError(key, "string", val)
 }
 
-func getMapArray(m map[string]interface{}, key string) ([]interface{}, error) {
+func arrayFromMap(m map[string]interface{}, key string) ([]interface{}, error) {
 	val, ok := m[key]
 	if !ok {
 		return nil, NewRequiredMapKeyError(key)
 	}
-	typedVal, ok := val.([]interface{})
-	if !ok {
-		return nil, NewWrongMapValueTypeError(key, "array", val)
+	if typedVal, ok := val.([]interface{}); ok {
+		return typedVal, nil
 	}
-	return typedVal, nil
+	return nil, NewWrongMapValueTypeError(key, "array", val)
 }
 
-func getMapFloat(m map[string]interface{}, key string) (float64, error) {
+func floatFromMap(m map[string]interface{}, key string) (float64, error) {
 	val, ok := m[key]
 	if !ok {
 		return 0, NewRequiredMapKeyError(key)
 	}
-	typedVal, ok := val.(float64)
-	if !ok {
-		return 0, NewWrongMapValueTypeError(key, "number", val)
+	if typedVal, ok := val.(float64); ok {
+		return typedVal, nil
 	}
-	return typedVal, nil
+	return 0, NewWrongMapValueTypeError(key, "float", val)
 }

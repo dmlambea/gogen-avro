@@ -2,152 +2,249 @@ package parser
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
-	avro "github.com/actgardner/gogen-avro/schema"
+	"github.com/actgardner/gogen-avro/schema"
 )
 
-// Namespace is a mapping of avro.QualifiedNames to their Definitions, used to resolve
-// type lookups within a schema.
+const (
+	// Special Go type for null types
+	nullGoType = "-"
+)
+
+// Namespace holds an array of schema.ComplexType, used to create the .go source files from them.
 type Namespace struct {
-	qualifiedTypes map[avro.QualifiedName]avro.QualifiedAvroType
-	registry       *referenceRegistry
-	Roots          []avro.CompositeType
-	ShortUnions    bool
+	registry referenceRegistry
+	Roots    []schema.ComplexType
+	// shortUnions    bool
 }
 
 func NewNamespace(shortUnions bool) *Namespace {
 	return &Namespace{
-		registry:    NewReferenceRegistry(),
-		Roots:       make([]avro.CompositeType, 0),
-		ShortUnions: shortUnions,
+		registry: NewReferenceRegistry(),
+		// shortUnions: shortUnions,
 	}
 }
 
+// ParseSchema accepts an Avro schema as a JSON string and parses it. An error is returned if any occurs.
+// The Avro type defined at the top level and all the type definitions beneath it will also be added to this Namespace.
+func (n *Namespace) ParseSchema(schemaJson []byte) (err error) {
+	var schema interface{}
+	if err = json.Unmarshal(schemaJson, &schema); err != nil {
+		return
+	}
+
+	// Intentionally the name starts with an invalid character, so the identifier cannot collide
+	// with any user-defined one.
+	_, err = n.decodeType("-", "", schema)
+	return
+}
+
 // registerType creates a reference wrapping a qnamed type in the registry. To avoid post-processing,
-// all qnamed types that are composite types (i.e., all non-basic types that might be requiring a Go
+// all qnamed types that are complex types (i.e., all non-primitive types that might be requiring a Go
 // source file), are also registered as root types. The registry triggers the resolution of all
 // references that were used in other types before reading the real definition.
-func (n *Namespace) registerType(name avro.QualifiedName, t avro.QualifiedAvroType) avro.AvroType {
-	if ct, ok := t.(avro.CompositeType); ok {
+func (n *Namespace) registerType(qname schema.QName, t schema.GenericType) schema.GenericType {
+	if ct, ok := t.(schema.ComplexType); ok {
 		n.Roots = append(n.Roots, ct)
 	}
-	ref, err := n.registry.CreateReference(name, t)
+	ref, err := n.registry.CreateReference(qname, t)
 	if err != nil {
 		panic(err)
 	}
 	if ref.IsUntyped() {
 		return ref
 	}
-	return ref.RefType()
+	return ref.Type()
 }
 
-// ParseAvroName parses a name according to the Avro spec:
-//   - If the name contains a dot ('.'), the last part is the name and the rest is the namespace
-//   - Otherwise, the enclosing namespace is used
-func ParseAvroName(enclosing, name string) avro.QualifiedName {
-	lastIndex := strings.LastIndex(name, ".")
-	if lastIndex != -1 {
-		enclosing = name[:lastIndex]
-	}
-	return avro.QualifiedName{enclosing, name[lastIndex+1:]}
-}
-
-// TypeForSchema accepts an Avro schema as a JSON string, decode it and return the AvroType defined at the top level:
-//    - a single record definition (JSON map)
-//    - a union of multiple types (JSON array)
-//    - an already-defined type (JSON string)
-// The Avro type defined at the top level and all the type definitions beneath it will also be added to this Namespace.
-func (n *Namespace) TypeForSchema(schemaJson []byte) (avro.AvroType, error) {
-	var schema interface{}
-	if err := json.Unmarshal(schemaJson, &schema); err != nil {
-		return nil, err
-	}
-
-	field, err := n.decodeTypeDefinition("topLevel", "", schema)
-	if err != nil {
-		return nil, err
-	}
-	return field, nil
-}
-
-func (n *Namespace) decodeTypeDefinition(name, namespace string, schema interface{}) (avro.AvroType, error) {
-	switch schema.(type) {
-	case string:
-		typeStr := schema.(string)
-		return n.getTypeByName(namespace, typeStr, schema), nil
-
-	case []interface{}:
-		return n.decodeUnionDefinition(name, namespace, schema.([]interface{}))
-
+// decodeType is the generic method to decode any type, given its schema.
+func (n *Namespace) decodeType(name, namespace string, typeSchema interface{}) (schema.GenericType, error) {
+	switch t := typeSchema.(type) {
 	case map[string]interface{}:
-		return n.decodeComplexDefinition(name, namespace, schema.(map[string]interface{}))
-
-	}
-
-	return nil, NewWrongMapValueTypeError("type", "array, string, map", schema)
-}
-
-// Given a map representing a record definition, validate the definition and build the RecordDefinition struct.
-func (n *Namespace) decodeRecordDefinition(namespace string, schemaMap map[string]interface{}) (*avro.RecordDefinition, error) {
-	typeStr, err := getMapString(schemaMap, "type")
-	if err != nil {
-		return nil, err
-	}
-
-	if typeStr != "record" {
-		return nil, fmt.Errorf("Type of record must be 'record'")
-	}
-
-	name, err := avroNameForDefinition(schemaMap, namespace)
-	if err != nil {
-		return nil, err
-	}
-
-	var rDocString string
-	if rDoc, ok := schemaMap["doc"]; ok {
-		rDocString, ok = rDoc.(string)
-		if !ok {
-			return nil, NewWrongMapValueTypeError("doc", "string", rDoc)
-		}
-	}
-
-	fieldList, err := getMapArray(schemaMap, "fields")
-	if err != nil {
-		return nil, err
-	}
-
-	decodedFields := make([]*avro.Field, 0)
-	for i, f := range fieldList {
-		field, ok := f.(map[string]interface{})
-		if !ok {
-			return nil, NewWrongMapValueTypeError("fields", "map[]", field)
-		}
-
-		fieldName, err := getMapString(field, "name")
-		if err != nil {
-			return nil, err
-		}
-
-		t, ok := field["type"]
-		if !ok {
-			return nil, NewRequiredMapKeyError("type")
-		}
-
-		fieldType, err := n.decodeTypeDefinition(fieldName, name.Namespace, t)
-		if err != nil {
-			return nil, err
-		}
-
-		var docString string
-		if doc, ok := field["doc"]; ok {
-			docString, ok = doc.(string)
-			if !ok {
-				return nil, NewWrongMapValueTypeError("doc", "string", doc)
+		return n.decodeComplexType(name, namespace, typeSchema.(map[string]interface{}))
+	case []interface{}:
+		// Unions must be manually added to the roots, because they are complex types
+		// but are not namespaced, so unions never go to the registry.
+		union, err := n.decodeUnion(name, namespace, typeSchema.([]interface{}))
+		if err == nil {
+			// In case of getting a valid union
+			if ct, ok := union.(schema.ComplexType); ok {
+				n.Roots = append(n.Roots, ct)
 			}
 		}
+		return union, err
+	case string:
+		name = typeSchema.(string)
+		return n.getTypeByName(name, namespace), nil
+	default:
+		return nil, fmt.Errorf("decoding of type %s is unimplemented", t)
+	}
+}
 
+// decodeComplexType decodes and registers a fixed, enum, map, array, record or qnamed reference complex type
+func (n *Namespace) decodeComplexType(name, namespace string, schemaMap map[string]interface{}) (schema.GenericType, error) {
+	typeStr, err := stringFromMap(schemaMap, "type")
+	if err != nil {
+		return nil, err
+	}
+	var at schema.GenericType
+	switch typeStr {
+	case "enum":
+		at, err = n.decodeEnum(namespace, schemaMap)
+	case "fixed":
+		at, err = n.decodeFixed(namespace, schemaMap)
+	case "map":
+		at, err = n.decodeMap(namespace, schemaMap)
+	case "array":
+		at, err = n.decodeArray(namespace, schemaMap)
+	case "record":
+		at, err = n.decodeRecord(namespace, schemaMap)
+	default:
+		// If the type isn't a special case, it's a primitive or a reference to an existing type
+		return n.getTypeByName(typeStr, namespace), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if ns, ok := at.(schema.NamespacedType); ok {
+		at = n.registerType(ns.QName(), at)
+	}
+	return at, nil
+}
+
+// decodeEnum accepts a namespace and a map representing an enum definition,
+// it validates the definition and build the enum type struct.
+func (n *Namespace) decodeEnum(namespace string, schemaMap map[string]interface{}) (schema.GenericType, error) {
+	qname, err := extractQName(schemaMap, namespace)
+	if err != nil {
+		return nil, err
+	}
+
+	symbolsSlice, err := arrayFromMap(schemaMap, "symbols")
+	if err != nil {
+		return nil, err
+	}
+
+	symbols, ok := interfaceSliceToStringSlice(symbolsSlice)
+	if !ok {
+		return nil, errors.New("'symbols' must be an array of strings")
+	}
+
+	enumField := schema.NewEnumField(qname, symbols)
+
+	if err = parseAliases(schemaMap, enumField, qname.Namespace); err != nil {
+		return nil, err
+	}
+	if err = parseDoc(schemaMap, enumField); err != nil {
+		return nil, err
+	}
+
+	return enumField, nil
+}
+
+// decodeFixed accepts a namespace and a map representing a fixed type definition,
+// it validates the definition and build the fixed type struct.
+func (n *Namespace) decodeFixed(namespace string, schemaMap map[string]interface{}) (schema.GenericType, error) {
+	qname, err := extractQName(schemaMap, namespace)
+	if err != nil {
+		return nil, err
+	}
+
+	sizeBytes, err := floatFromMap(schemaMap, "size")
+	if err != nil {
+		return nil, err
+	}
+	if sizeBytes < 0 {
+		return nil, errors.New("'size' must be a positive integer")
+	}
+
+	fixedField := schema.NewFixedField(qname, uint64(sizeBytes))
+
+	if err = parseAliases(schemaMap, fixedField, qname.Namespace); err != nil {
+		return nil, err
+	}
+
+	return fixedField, nil
+}
+
+// decodeMap accepts a namespace and a map representing a fixed type definition,
+// it validates the definition and build the map type struct.
+func (n *Namespace) decodeMap(namespace string, schemaMap map[string]interface{}) (schema.GenericType, error) {
+	values, ok := schemaMap["values"]
+	if !ok {
+		return nil, NewRequiredMapKeyError("values")
+	}
+
+	itemType, err := n.decodeType("", namespace, values)
+	if err != nil {
+		return nil, err
+	}
+
+	return schema.NewMapField(itemType), nil
+}
+
+// decodeArray accepts a namespace and a map representing a fixed type definition,
+// it validates the definition and build the array type struct.
+func (n *Namespace) decodeArray(namespace string, schemaMap map[string]interface{}) (schema.GenericType, error) {
+	items, ok := schemaMap["items"]
+	if !ok {
+		return nil, NewRequiredMapKeyError("items")
+	}
+
+	itemType, err := n.decodeType("", namespace, items)
+	if err != nil {
+		return nil, err
+	}
+
+	return schema.NewArrayField(itemType), nil
+}
+
+// decodeRecord accepts a namespace and a map representing a fixed type definition,
+// it validates the definition and build the record type struct.
+func (n *Namespace) decodeRecord(namespace string, schemaMap map[string]interface{}) (schema.GenericType, error) {
+	qname, err := extractQName(schemaMap, namespace)
+	if err != nil {
+		return nil, err
+	}
+
+	fields, err := arrayFromMap(schemaMap, "fields")
+	if err != nil {
+		return nil, err
+	}
+
+	decodedFields := make([]schema.GenericType, len(fields))
+	for i, f := range fields {
+		fieldSchemaMap, ok := f.(map[string]interface{})
+		if !ok {
+			return nil, NewWrongMapValueTypeError("fields", "map[]", fields)
+		}
+
+		fieldName, err := stringFromMap(fieldSchemaMap, "name")
+		if err != nil {
+			return nil, err
+		}
+
+		fieldType, err := n.decodeType(fieldName, qname.Namespace, fieldSchemaMap["type"])
+		if err != nil {
+			return nil, err
+		}
+
+		decodedField := schema.NewField(fieldName, fieldType)
+
+		// Record fields have no namespaces
+		if err = parseAliases(fieldSchemaMap, decodedField, ""); err != nil {
+			return nil, err
+		}
+		if err = parseDoc(fieldSchemaMap, decodedField); err != nil {
+			return nil, err
+		}
+
+		decodedFields[i] = decodedField
+
+		/**  TODO: support golang tags
 		var fieldTags string
 		if tags, ok := field["golang.tags"]; ok {
 			fieldTags, ok = tags.(string)
@@ -155,248 +252,119 @@ func (n *Namespace) decodeRecordDefinition(namespace string, schemaMap map[strin
 				return nil, NewWrongMapValueTypeError("golang.tags", "string", tags)
 			}
 		}
-
-		var fieldAliases []string
-		if aliases, ok := field["aliases"]; ok {
-			aliasList, ok := aliases.([]interface{})
-			if !ok {
-				return nil, NewWrongMapValueTypeError("aliases", "[]string", aliases)
-			}
-
-			for _, aliasVal := range aliasList {
-				aliasStr, ok := aliasVal.(string)
-				if !ok {
-					return nil, NewWrongMapValueTypeError("aliases", "[]string", aliases)
-				}
-				fieldAliases = append(fieldAliases, aliasStr)
-			}
-		}
-
-		fieldStruct := avro.NewField(fieldName, fieldType, fieldAliases, docString, field, i, fieldTags)
-
-		decodedFields = append(decodedFields, fieldStruct)
+		*/
 	}
 
-	aliases, err := parseAliases(schemaMap, name.Namespace)
-	if err != nil {
+	recordField := schema.NewRecordField(qname, decodedFields)
+
+	if err = parseAliases(schemaMap, recordField, qname.Namespace); err != nil {
+		return nil, err
+	}
+	if err = parseDoc(schemaMap, recordField); err != nil {
 		return nil, err
 	}
 
-	return avro.NewRecordDefinition(name, aliases, decodedFields, rDocString, schemaMap), nil
+	return recordField, nil
 }
 
-// decodeEnumDefinition accepts a namespace and a map representing an enum definition,
-// it validates the definition and build the EnumDefinition struct.
-func (n *Namespace) decodeEnumDefinition(namespace string, schemaMap map[string]interface{}) (*avro.EnumDefinition, error) {
-	typeStr, err := getMapString(schemaMap, "type")
-	if err != nil {
-		return nil, err
-	}
-
-	if typeStr != "enum" {
-		return nil, fmt.Errorf("Type of enum must be 'enum'")
-	}
-
-	name, err := avroNameForDefinition(schemaMap, namespace)
-	if err != nil {
-		return nil, err
-	}
-
-	symbolSlice, err := getMapArray(schemaMap, "symbols")
-	if err != nil {
-		return nil, err
-	}
-
-	symbolStr, ok := interfaceSliceToStringSlice(symbolSlice)
-	if !ok {
-		return nil, fmt.Errorf("'symbols' must be an array of strings")
-	}
-
-	aliases, err := parseAliases(schemaMap, namespace)
-	if err != nil {
-		return nil, err
-	}
-
-	var docString string
-	if doc, ok := schemaMap["doc"]; ok {
-		if docString, ok = doc.(string); !ok {
-			return nil, fmt.Errorf("'doc' must be a string")
-		}
-	}
-
-	return avro.NewEnumDefinition(name, aliases, symbolStr, docString, schemaMap), nil
-}
-
-// decodeFixedDefinition accepts a namespace and a map representing a fixed definition,
-// it validates the definition and build the FixedDefinition struct.
-func (n *Namespace) decodeFixedDefinition(namespace string, schemaMap map[string]interface{}) (*avro.FixedDefinition, error) {
-	typeStr, err := getMapString(schemaMap, "type")
-	if err != nil {
-		return nil, err
-	}
-
-	if typeStr != "fixed" {
-		return nil, fmt.Errorf("Type of fixed must be 'fixed'")
-	}
-
-	name, err := avroNameForDefinition(schemaMap, namespace)
-	if err != nil {
-		return nil, err
-	}
-
-	sizeBytes, err := getMapFloat(schemaMap, "size")
-	if err != nil {
-		return nil, err
-	}
-
-	aliases, err := parseAliases(schemaMap, name.Namespace)
-	if err != nil {
-		return nil, err
-	}
-
-	return avro.NewFixedDefinition(name, aliases, int(sizeBytes), schemaMap), nil
-}
-
-func (n *Namespace) decodeUnionDefinition(name, namespace string, fieldList []interface{}) (*avro.UnionField, error) {
-	unionFields := make([]avro.AvroType, len(fieldList))
-	for i, f := range fieldList {
-		fieldDef, err := n.decodeTypeDefinition(name, namespace, f)
+// decodeUnion accepts a namespace and a map representing a union type definition,
+// it validates the definition and build the union type struct.
+func (n *Namespace) decodeUnion(name, namespace string, schemaList []interface{}) (result schema.GenericType, err error) {
+	nullFieldFoundAt := -1
+	decodedFields := make([]schema.GenericType, len(schemaList))
+	for i, f := range schemaList {
+		fieldType, err := n.decodeType("", "", f)
 		if err != nil {
 			return nil, err
 		}
-		unionFields[i] = fieldDef
+		if fieldType.GoType() == nullGoType {
+			nullFieldFoundAt = i
+		}
+
+		decodedFields[i] = schema.NewField(fieldType.Name(), fieldType)
 	}
 
-	if n.ShortUnions {
-		name += "Union"
+	if len(decodedFields) != 2 || nullFieldFoundAt < 0 {
+		result, err = schema.NewUnionField(decodedFields), nil
 	} else {
-		name = ""
+		result, err = decodedFields[1-nullFieldFoundAt].(*schema.FieldType).Type(), nil
 	}
-	return avro.NewUnionField(name, unionFields, fieldList), nil
+	if err == nil {
+		result.SetOptionalIndex(nullFieldFoundAt)
+	}
+	return
 }
 
-func (n *Namespace) decodeComplexDefinition(name, namespace string, typeMap map[string]interface{}) (avro.AvroType, error) {
-	typeStr, err := getMapString(typeMap, "type")
-	if err != nil {
-		return nil, err
-	}
-	switch typeStr {
-	case "array":
-		items, ok := typeMap["items"]
-		if !ok {
-			return nil, NewRequiredMapKeyError("items")
-		}
-
-		fieldType, err := n.decodeTypeDefinition(name, namespace, items)
-		if err != nil {
-			return nil, err
-		}
-
-		return avro.NewArrayField(fieldType, typeMap), nil
-
-	case "map":
-		values, ok := typeMap["values"]
-		if !ok {
-			return nil, NewRequiredMapKeyError("values")
-		}
-
-		fieldType, err := n.decodeTypeDefinition(name, namespace, values)
-		if err != nil {
-			return nil, err
-		}
-
-		return avro.NewMapField(fieldType, typeMap), nil
-
-	case "enum":
-		definition, err := n.decodeEnumDefinition(namespace, typeMap)
-		if err != nil {
-			return nil, err
-		}
-
-		ref := n.registerType(definition.QualifiedName(), definition)
-		return ref, nil
-
-	case "fixed":
-		definition, err := n.decodeFixedDefinition(namespace, typeMap)
-		if err != nil {
-			return nil, err
-		}
-
-		ref := n.registerType(definition.QualifiedName(), definition)
-		return ref, nil
-
-	case "record":
-		definition, err := n.decodeRecordDefinition(namespace, typeMap)
-		if err != nil {
-			return nil, err
-		}
-
-		ref := n.registerType(definition.QualifiedName(), definition)
-		return ref, nil
-
-	default:
-		// If the type isn't a special case, it's a primitive or a reference to an existing type
-		return n.getTypeByName(namespace, typeStr, typeMap), nil
-	}
-}
-
-func (n *Namespace) getTypeByName(namespace string, typeStr string, definition interface{}) avro.AvroType {
+// getTypeByName returns the type associated with a type name, mostly primitive types, but also qnamed, registered types.
+func (n *Namespace) getTypeByName(typeStr, namespace string) schema.GenericType {
+	var name, goType string
 	switch typeStr {
 	case "int":
-		return avro.NewIntField(definition)
-
+		name, goType = "Int", "int32"
 	case "long":
-		return avro.NewLongField(definition)
-
+		name, goType = "Long", "int64"
 	case "float":
-		return avro.NewFloatField(definition)
-
+		name, goType = "Float", "float32"
 	case "double":
-		return avro.NewDoubleField(definition)
-
+		name, goType = "Double", "float64"
 	case "boolean":
-		return avro.NewBoolField(definition)
-
+		name, goType = "Bool", "bool"
 	case "bytes":
-		return avro.NewBytesField(definition)
-
+		name, goType = "Bytes", "[]byte"
 	case "string":
-		return avro.NewStringField(definition)
-
+		name, goType = "String", "string"
 	case "null":
-		return avro.NewNullField(definition)
+		name, goType = "Null", nullGoType
 	}
 
-	qname := ParseAvroName(namespace, typeStr)
+	if name != "" {
+		return schema.NewPrimitiveType(name, goType)
+	}
+	qname := fixQName(schema.QName{Name: typeStr, Namespace: namespace})
 	return n.registerType(qname, nil)
 }
 
-// parseAliases parses out all the aliases from a definition map - returns an empty slice if no aliases exist.
-// Returns an error if the aliases key exists but the value isn't a list of strings.
-func parseAliases(objectMap map[string]interface{}, namespace string) ([]avro.QualifiedName, error) {
-	aliases, ok := objectMap["aliases"]
+// Enriches a NamespacedType with aliases data, if any
+func parseAliases(schemaMap map[string]interface{}, t schema.NamespacedType, namespace string) error {
+	aliases, ok := schemaMap["aliases"]
 	if !ok {
-		return make([]avro.QualifiedName, 0), nil
+		return nil
 	}
 
-	aliasList, ok := aliases.([]interface{})
+	interfaceList, ok := aliases.([]interface{})
 	if !ok {
-		return nil, fmt.Errorf("Field aliases expected to be array, got %v", aliases)
+		return fmt.Errorf("Field aliases expected to be array, got %v", aliases)
+	}
+	stringList, ok := interfaceSliceToStringSlice(interfaceList)
+	if !ok {
+		return fmt.Errorf("Field aliases expected to be array of string, got %v", interfaceList)
 	}
 
-	qualifiedAliases := make([]avro.QualifiedName, 0, len(aliasList))
-
-	for _, alias := range aliasList {
-		aliasString, ok := alias.(string)
-		if !ok {
-			return nil, fmt.Errorf("Field aliases expected to be array of strings, got %v", aliases)
+	qnames := make([]schema.QName, 0, len(interfaceList))
+	for _, alias := range stringList {
+		qnameAlias := schema.QName{
+			Name:      alias,
+			Namespace: namespace,
 		}
-		qualifiedAliases = append(qualifiedAliases, ParseAvroName(namespace, aliasString))
+		qnames = append(qnames, fixQName(qnameAlias))
 	}
-	return qualifiedAliases, nil
+	t.SetAliases(qnames)
+	return nil
 }
 
-// avroNameForDefinition returns the fully qualified name from the
+// Enriches a DocumentedType with doc string data, if declared
+func parseDoc(schemaMap map[string]interface{}, t schema.DocumentedType) error {
+	var docString string
+	if doc, ok := schemaMap["doc"]; ok {
+		if docString, ok = doc.(string); !ok {
+			return errors.New("'doc' must be a string")
+		}
+		t.SetDoc(docString)
+	}
+	return nil
+}
+
+// extractQName returns the fully qualified name from the
 // schema definition represented by schemaMap. From the specification:
 //
 //	In record, enum and fixed definitions, the fullname is
@@ -418,20 +386,40 @@ func parseAliases(objectMap map[string]interface{}, namespace string) ([]avro.Qu
 //	definition of org.foo.Y, then the fullname is org.foo.X. If
 //	there is no enclosing namespace then the null namespace is
 //	used.
-func avroNameForDefinition(schemaMap map[string]interface{}, enclosing string) (avro.QualifiedName, error) {
-	name, err := getMapString(schemaMap, "name")
-	if err != nil {
-		return avro.QualifiedName{}, err
+func extractQName(schemaMap map[string]interface{}, enclosing string) (qname schema.QName, err error) {
+	if qname.Name, err = stringFromMap(schemaMap, "name"); err != nil {
+		return
 	}
-	var namespace string
 	if _, ok := schemaMap["namespace"]; ok {
-		namespace, err = getMapString(schemaMap, "namespace")
-		if err != nil {
-			return avro.QualifiedName{}, err
+		if qname.Namespace, err = stringFromMap(schemaMap, "namespace"); err != nil {
+			return
 		}
 	}
-	if namespace != "" {
-		enclosing = namespace
+	if qname.Namespace == "" {
+		qname.Namespace = enclosing
 	}
-	return ParseAvroName(enclosing, name), nil
+	return fixQName(qname), nil
+}
+
+// fixQName parses a name according to the Avro spec:
+//   - If the name contains a dot ('.'), the last part is the name and the rest is the namespace
+//   - Otherwise, the enclosing namespace is used
+func fixQName(qname schema.QName) schema.QName {
+	if lastIndex := strings.LastIndex(qname.Name, "."); lastIndex != -1 {
+		qname.Namespace = qname.Name[:lastIndex]
+		qname.Name = qname.Name[lastIndex+1:]
+	}
+	return qname
+}
+
+func interfaceSliceToStringSlice(iSlice []interface{}) ([]string, bool) {
+	var ok bool
+	stringSlice := make([]string, len(iSlice))
+	for i, v := range iSlice {
+		stringSlice[i], ok = v.(string)
+		if !ok {
+			return nil, false
+		}
+	}
+	return stringSlice, true
 }
