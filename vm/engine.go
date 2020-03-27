@@ -51,11 +51,16 @@ func (e engine) doRun(depth, pc int) (err error) {
 			if acc, err = readLong(e.input); err != nil {
 				return err
 			}
-			if acc == int64(inst.val) {
+			switch {
+			case acc == int64(inst.val):
 				if obj, err = readInput(inst.tp, e.input); err != nil {
 					return err
 				}
 				if err = e.setter.Set(obj); err != nil {
+					return err
+				}
+			default:
+				if err = e.setter.Skip(); err != nil {
 					return err
 				}
 			}
