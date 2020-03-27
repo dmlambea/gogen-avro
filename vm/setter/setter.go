@@ -11,6 +11,7 @@ import (
 type Setter interface {
 	Init(arg interface{}) error
 	Set(value interface{}) error
+	Skip() error
 	Reset() error
 }
 
@@ -56,6 +57,10 @@ func NewSetterForFields(fields []interface{}) Setter {
 
 // NewSetterFor creates a setter for all exported fields in object.
 func NewSetterFor(object interface{}) (Setter, error) {
+	if s, ok := isAlreadySetter(object); ok {
+		return s, nil
+	}
+
 	ptr, err := assertPointer(object)
 	if err != nil {
 		return nil, err
@@ -63,12 +68,6 @@ func NewSetterFor(object interface{}) (Setter, error) {
 
 	elem := ptr.Elem()
 	switch elem.Kind() {
-	/*
-		case reflect.Ptr:
-			if elem.CanAddr() && elem.Addr().CanInterface() {
-				return NewSetterFor(elem.Addr().Interface())
-			}
-	*/
 	case reflect.Struct:
 		return newStructSetter(elem.Addr().Interface())
 	case reflect.Map:
@@ -76,6 +75,22 @@ func NewSetterFor(object interface{}) (Setter, error) {
 		return newMapSetter(object, elem.Type()), nil
 	}
 	return nil, fmt.Errorf("object type %s not supported yet", elem.Kind())
+}
+
+// isAlreadySetter returns the (already-Setter, true) value of object, or (invalid, false) otherwise.
+func isAlreadySetter(object interface{}) (s Setter, ok bool) {
+	if object != nil {
+		// Check if object is already a Setter
+		if s, ok = object.(Setter); ok {
+			return
+		}
+
+		// Check if it is a Factory instead
+		if factory, ok := object.(Factory); ok {
+			return factory.Setter(), ok
+		}
+	}
+	return nil, false
 }
 
 // newStructSetter creates a setter for all exported fields in struct elem.
@@ -99,8 +114,7 @@ func newStructSetter(object interface{}) (s Setter, err error) {
 		iface := fld.Addr().Interface()
 		switch fld.Kind() {
 		case reflect.Struct:
-			iface, err = NewSetterFor(iface)
-			if err != nil {
+			if iface, err = NewSetterFor(iface); err != nil {
 				return
 			}
 		case reflect.Map:

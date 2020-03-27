@@ -55,10 +55,19 @@ func (s *mapSetter) Init(arg interface{}) (err error) {
 	return
 }
 
-// Set puts the value into the current field this Setter is tracking.
-// A successful set advances the current field. Setting past the last
-// field returns ErrSetterEOF.
-func (s *mapSetter) Set(value interface{}) (err error) {
+func (s *mapSetter) Set(value interface{}) error {
+	return s.doOperation(opSet, value)
+}
+
+func (s *mapSetter) Skip() error {
+	return s.doOperation(opSkip, nil)
+}
+
+func (s *mapSetter) Reset() error {
+	return ErrNotResettable
+}
+
+func (s *mapSetter) doOperation(op operation, value interface{}) (err error) {
 	// Uninitialized map
 	if s.keyValSetter == nil {
 		return ErrUninitializedSetter
@@ -69,7 +78,12 @@ func (s *mapSetter) Set(value interface{}) (err error) {
 		return ErrSetterEOF
 	}
 
-	err = s.keyValSetter.Set(value)
+	switch op {
+	case opSet:
+		err = s.keyValSetter.Set(value)
+	case opSkip:
+		err = s.keyValSetter.Skip()
+	}
 	if err == ErrSetterEOF {
 		// EOF is returned from keyVal setter, once exhausted
 		s.appendMap()
@@ -77,20 +91,17 @@ func (s *mapSetter) Set(value interface{}) (err error) {
 		if s.entries > 0 {
 			// Reuse the keyVal setter for the rest of the entries
 			s.keyValSetter.Reset()
+			// Avoid populating EOF condition, since there are more entries to be operated.
 			err = nil
 		} else {
-			// Remove the keyVal setter, since this map would need
-			// initialization again, and populate EOF condition
+			// Remove the keyVal setter so that the next Init call affects the
+			// mapSetter and not the nested keyValSetter
 			s.keyValSetter = nil
 		}
 	}
 	// This point returns normal EOF condition for the map, or an error
 	// from any of the nested setters.
 	return
-}
-
-func (s *mapSetter) Reset() error {
-	return ErrNotResettable
 }
 
 // appendMap puts the ky-val pair into the target map

@@ -6,6 +6,13 @@ import (
 	"reflect"
 )
 
+type operation byte
+
+const (
+	opSet  operation = iota // The requested operation is to set the current field
+	opSkip                  // The requested operation is to skip the current field
+)
+
 type primitiveSetter struct {
 	curFld int
 	fields []interface{}
@@ -24,25 +31,18 @@ func (s *primitiveSetter) Init(arg interface{}) error {
 	return s.nested.Init(arg)
 }
 
-// Set puts the value into the current field this Setter is tracking.
-// A successful set advances the current field. Setting past the last
-// field returns ErrSetterEOF.
+// Set puts the value into the current field this Setter is tracking. If the current
+// field is a nested Setter, the Set operation is performed recursively until
+// success. Setting the last non-nested field returns ErrSetterEOF.
 func (s *primitiveSetter) Set(value interface{}) error {
-	ok, err := s.setNested(value)
-	if ok || err != nil {
-		return err
-	}
+	return s.doOperation(opSet, value)
+}
 
-	if err = s.setCurrent(value); err == nil {
-		// Advance only if not currently set a nested field
-		if s.nested == nil {
-			s.curFld++
-			// Must signal EOF asap, otherwise map/array setters could leave
-			// unassigned data
-			err = s.checkEOF()
-		}
-	}
-	return err
+// Skip advances the pointer of current field this Setter is tracking. If the current
+// field is a nested Setter, the Skip operation is performed recursively until
+// success. Skipping the last non-nested field returns ErrSetterEOF.
+func (s *primitiveSetter) Skip() error {
+	return s.doOperation(opSkip, nil)
 }
 
 // Reset restarts the setter to its initial values, so their fields can be set again.
@@ -52,9 +52,28 @@ func (s *primitiveSetter) Reset() error {
 	return nil
 }
 
-// setNested tries to set the value using a nested setter, so that
+// doOperation executes the given operation
+func (s *primitiveSetter) doOperation(op operation, value interface{}) error {
+	ok, err := s.doNested(op, value)
+	if ok || err != nil {
+		return err
+	}
+
+	if err = s.doCurrent(op, value); err == nil {
+		// Advance only if not currently operating on a nested field
+		if s.nested == nil {
+			s.curFld++
+			// Must signal EOF asap, otherwise map/array setters could leave
+			// unassigned/unskipped data
+			err = s.checkEOF()
+		}
+	}
+	return err
+}
+
+// doNested tries to perform the operation using a nested setter, so that
 // complex, non-primitive types can be traversed.
-func (s *primitiveSetter) setNested(value interface{}) (bool, error) {
+func (s *primitiveSetter) doNested(op operation, value interface{}) (bool, error) {
 	// No nested, try to match current field
 	if s.nested == nil {
 		s.initNested()
@@ -64,23 +83,48 @@ func (s *primitiveSetter) setNested(value interface{}) (bool, error) {
 		}
 	}
 
-	// Successful set in nested, return success
-	err := s.nested.Set(value)
+	// If successfully operated in nested, return success.
+	var err error
+	switch op {
+	case opSet:
+		err = s.nested.Set(value)
+	case opSkip:
+		err = s.nested.Skip()
+	}
 	if err == nil {
 		return true, nil
 	}
 
-	// Unsuccessful set in nested not caused by EOF in nested setter,
-	// return error status
+	// Unsuccessful operation in nested, not caused
+	// by EOF in nested setter -> return error status
 	if !errors.Is(err, ErrSetterEOF) {
 		return false, err
 	}
 
-	// Nested setter fully exhausted: disable its use and advance
+	// Nested setter fully exhausted: disable it and advance
 	// pointer for using the following field in this setter.
 	s.nested = nil
 	s.curFld++
 	return true, s.checkEOF()
+}
+
+// doCurrent performs the operation against the current field.
+func (s *primitiveSetter) doCurrent(op operation, value interface{}) (err error) {
+	var fld interface{}
+	if fld, err = s.getCurrentField(); err != nil {
+		return
+	}
+	// Only opSet makes sense to execute. OpSkip always succeeds.
+	if op == opSet {
+		fldValue := reflect.ValueOf(fld)
+		switch fldValue.Kind() {
+		case reflect.Ptr:
+			err = s.setPointerElem(fldValue.Elem(), value)
+		default:
+			err = fmt.Errorf("type %s is not supported", fldValue.Kind())
+		}
+	}
+	return err
 }
 
 // initNested tries to initialize a nested setter from current field
@@ -94,20 +138,8 @@ func (s *primitiveSetter) initNested() error {
 }
 
 // asSetter tries to get a Setter from given fld by checking if the
-// field is already a Setter. If so, then uses it directly; otherwise,
-// if the field implemets setter.Factory, a setter is created using it.
-// If all the above fails, nil is returned.
+// field is already a Setter. Otherwise, nil is returned.
 func (s *primitiveSetter) asSetter(fld interface{}) Setter {
-	// Check if field is already a Setter
-	if setter, ok := fld.(Setter); ok {
-		return setter
-	}
-
-	// Check if it is a Factory instead
-	if factory, ok := fld.(Factory); ok {
-		return factory.Setter()
-	}
-
 	// Well, let's check for an autodetectable type
 	if setter, err := NewSetterFor(fld); err == nil {
 		return setter
@@ -131,19 +163,6 @@ func (s *primitiveSetter) checkEOF() (err error) {
 		err = ErrSetterEOF
 	}
 	return
-}
-
-// setCurrent sets the value into the current field.
-func (s *primitiveSetter) setCurrent(value interface{}) error {
-	fld, err := s.getCurrentField()
-	if err != nil {
-		return err
-	}
-	fldValue := reflect.ValueOf(fld)
-	if fldValue.Kind() == reflect.Ptr {
-		return s.setPointerElem(fldValue.Elem(), value)
-	}
-	return fmt.Errorf("type %s is not supported", fldValue.Kind())
 }
 
 // setPointerElem sets the value into the current field, which must be a pointer.
