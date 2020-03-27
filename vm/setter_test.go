@@ -12,33 +12,53 @@ import (
 
 var (
 	inputData = []byte{
-		84,
-		0, 42,
+		84,    // AInt
+		0, 42, // OptInt (valid)
+		2, // NilInt (nil)
+
+		// hidden is omitted
+
+		// Node :: Name
 		20, 70, 105, 114, 115, 116, 32, 110, 111, 100, 101,
-		2, 2,
-		2, 4,
-		2, 6,
-		0,
+
+		// Node :: Address (valid)
 		2,
-		8, 0,
+		2, // Id
+
+		// Next :: Address (valid)
+		2,
+		4, // Id
+
+		// Next :: Address (valid)
+		2,
+		6, // Id
+
+		// Next :: Address (nil)
+		0,
+
+		// OptAddr :: Address (valid)
+		2,
+		8, // Id
+		0, // Next (nil)
 	}
 
 	readerByteCode = []byte{
 		byte(OpMov), byte(TypeInt),
-		byte(OpMovOpt), byte(TypeInt), 0,
+		byte(OpMovOpt), 0, byte(TypeInt),
+		byte(OpMovOpt), 0, byte(TypeInt),
 		byte(OpCall), 4,
 		byte(OpLoad),
-		byte(OpJmpEq), 1, 0,
+		byte(OpJmpEq), 0, 1,
 		byte(OpCall), 6,
 		byte(OpHalt),
 		byte(OpMov), byte(TypeString), // 4: Node reader
 		byte(OpLoad),
-		byte(OpJmpEq), 1, 0,
+		byte(OpJmpEq), 0, 1,
 		byte(OpCall), 1,
 		byte(OpRet),
 		byte(OpMov), byte(TypeInt), // Address reader
 		byte(OpLoad),
-		byte(OpJmpEq), 1, 0,
+		byte(OpJmpEq), 0, 1,
 		byte(OpJmp), -4 & 0xff,
 		byte(OpRet),
 	}
@@ -63,6 +83,8 @@ func TestSetter(t *testing.T) {
 	assert.Equal(t, int32(42), obj.AInt)
 	require.NotNil(t, obj.OptInt)
 	assert.Equal(t, int32(21), *obj.OptInt)
+
+	assert.Nil(t, obj.NilInt)
 
 	assert.Equal(t, "First node", obj.Node.Name)
 

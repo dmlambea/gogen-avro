@@ -38,7 +38,7 @@ var (
 
 	mapReaderByteCode = []byte{
 		byte(OpMov), byte(TypeInt),
-		byte(OpMovOpt), byte(TypeInt), 0,
+		byte(OpMovOpt), 0, byte(TypeInt),
 		byte(OpLoopStart), 7,
 		byte(OpMov), byte(TypeString), // Outer Map key
 		byte(OpMov), byte(TypeFloat), // Outer map values

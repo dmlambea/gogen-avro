@@ -8,6 +8,7 @@ package generated
 type SetterTestRecord struct {
 	AInt    int32
 	OptInt  *int32
+	NilInt  *int32
 	hidden  string
 	Node    Node
 	OptAddr *Address
