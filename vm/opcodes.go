@@ -15,7 +15,6 @@ const (
 	OpMov                     // Moves input data from the operand type tt to the current placeholder
 	OpMovOpt                  // Executes Load and then executes Mov if the acc is equal to val
 	OpSkip                    // Skips input data from the operand type tt
-	OpSkipOpt                 // Executes Load and then executes Skip if the acc is equal to val
 	OpJmp                     // jumps to the relative position pp
 	OpJmpEq                   // jumps to the relative position pp if acc is equal to val
 	OpCall                    // calls a subroutine
@@ -38,8 +37,6 @@ func (op Opcode) String() string {
 		return "movOpt"
 	case OpSkip:
 		return "skip"
-	case OpSkipOpt:
-		return "skipOpt"
 	case OpJmp:
 		return "jmp"
 	case OpJmpEq:
