@@ -8,6 +8,7 @@ import (
 )
 
 type ByteReader interface {
+	io.Reader
 	ReadByte() (byte, error)
 }
 
@@ -25,41 +26,6 @@ func readBool(r io.Reader) (bool, error) {
 		b = bs[0]
 	}
 	return b == 1, nil
-}
-
-func readBytes(r io.Reader) ([]byte, error) {
-	size, err := readLong(r)
-	if err != nil {
-		return nil, err
-	}
-	if size == 0 {
-		return []byte{}, nil
-	}
-	bb := make([]byte, size)
-	_, err = io.ReadFull(r, bb)
-	return bb, err
-}
-
-func readDouble(r io.Reader) (float64, error) {
-	buf := make([]byte, 8)
-	_, err := io.ReadFull(r, buf)
-	if err != nil {
-		return 0, err
-	}
-	bits := binary.LittleEndian.Uint64(buf)
-	val := math.Float64frombits(bits)
-	return val, nil
-}
-
-func readFloat(r io.Reader) (float32, error) {
-	buf := make([]byte, 4)
-	_, err := io.ReadFull(r, buf)
-	if err != nil {
-		return 0, err
-	}
-	bits := binary.LittleEndian.Uint32(buf)
-	val := math.Float32frombits(bits)
-	return val, nil
 }
 
 func readInt(r io.Reader) (int32, error) {
@@ -124,6 +90,28 @@ func readLong(r io.Reader) (int64, error) {
 	return datum, nil
 }
 
+func readFloat(r io.Reader) (float32, error) {
+	buf := make([]byte, 4)
+	_, err := io.ReadFull(r, buf)
+	if err != nil {
+		return 0, err
+	}
+	bits := binary.LittleEndian.Uint32(buf)
+	val := math.Float32frombits(bits)
+	return val, nil
+}
+
+func readDouble(r io.Reader) (float64, error) {
+	buf := make([]byte, 8)
+	_, err := io.ReadFull(r, buf)
+	if err != nil {
+		return 0, err
+	}
+	bits := binary.LittleEndian.Uint64(buf)
+	val := math.Float64frombits(bits)
+	return val, nil
+}
+
 func readString(r io.Reader) (string, error) {
 	len, err := readLong(r)
 	if err != nil {
@@ -148,8 +136,15 @@ func readString(r io.Reader) (string, error) {
 	return string(bb), nil
 }
 
-func readFixed(r io.Reader, size int) ([]byte, error) {
+func readBytes(r io.Reader) ([]byte, error) {
+	size, err := readLong(r)
+	if err != nil {
+		return nil, err
+	}
+	if size == 0 {
+		return []byte{}, nil
+	}
 	bb := make([]byte, size)
-	_, err := io.ReadFull(r, bb)
+	_, err = io.ReadFull(r, bb)
 	return bb, err
 }

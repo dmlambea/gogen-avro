@@ -1,0 +1,51 @@
+{
+	"type": "record",
+	"name": "SetterTestRecord",
+	"fields": [
+		{
+			"name": "aInt",
+			"type": "int"
+		},
+		{
+			"name": "optInt",
+			"type": [ "int", "null" ]
+		},
+		{
+			"name": "node",
+			"type": {
+				"name": "Node",
+				"type": "record",
+				"fields": [
+					{
+						"name": "name",
+						"type": "string"
+					},
+					{
+						"name": "addr",
+						"type": [
+							"null",
+							{
+								"name": "Address",
+								"type": "record",
+								"fields": [
+									{
+										"name": "id",
+										"type": "int"
+									},
+									{
+										"name": "next",
+										"type": [ "null", "Address" ]
+									}
+								]
+							}
+						]
+					}
+				]
+			}
+		},
+		{
+			"name": "optAddr",
+			"type": [ "null", "Address" ]
+		}
+	]
+}
