@@ -20,11 +20,11 @@ var (
 // Size returns the serialized size of this instruction.
 func (i Instruction) Size() int {
 	switch i.op {
-	case OpError, OpHalt, OpLoad, OpRet, OpLoopEnd:
+	case OpError, OpHalt, OpLoad, OpSkip, OpRet, OpLoopEnd:
 		return 1
-	case OpMov, OpSkip, OpJmp, OpCall, OpLoopStart:
+	case OpMov, OpJmp, OpCall, OpLoopStart:
 		return 2
-	case OpMovOpt, OpSkipOpt, OpJmpEq:
+	case OpMovOpt, OpJmpEq:
 		return 3
 	default:
 		panic(fmt.Sprintf("invalid instruction opCode %x", i.op))
@@ -42,11 +42,9 @@ func decodeInstruction(input []byte) (inst Instruction) {
 	case OpMov:
 		inst = Mov(Type(input[1]))
 	case OpMovOpt:
-		inst = MovOpt(Type(input[1]), input[2])
+		inst = MovOpt(input[1], Type(input[2]))
 	case OpSkip:
-		inst = Skip(Type(input[1]))
-	case OpSkipOpt:
-		inst = SkipOpt(Type(input[1]), input[2])
+		inst = Skip()
 	case OpJmp:
 		inst = Jmp(input[1])
 	case OpJmpEq:
@@ -77,23 +75,19 @@ func Mov(t Type) Instruction {
 	return Instruction{op: OpMov, tp: t}
 }
 
-func MovOpt(t Type, val byte) Instruction {
+func MovOpt(val byte, t Type) Instruction {
 	return Instruction{op: OpMovOpt, tp: t, val: val}
 }
 
-func Skip(t Type) Instruction {
-	return Instruction{op: OpSkip, tp: t}
-}
-
-func SkipOpt(t Type, val byte) Instruction {
-	return Instruction{op: OpSkipOpt, tp: t, val: val}
+func Skip() Instruction {
+	return Instruction{op: OpSkip}
 }
 
 func Jmp(relByte byte) Instruction {
 	return Instruction{op: OpJmp, pos: relByteToInt(relByte)}
 }
 
-func JmpEq(relByte byte, val byte) Instruction {
+func JmpEq(val byte, relByte byte) Instruction {
 	return Instruction{op: OpJmpEq, pos: relByteToInt(relByte), val: val}
 }
 
@@ -122,11 +116,11 @@ func relByteToInt(b byte) int {
 
 func (i Instruction) String() string {
 	switch i.op {
-	case OpError, OpHalt, OpLoad, OpRet, OpLoopEnd:
+	case OpError, OpHalt, OpLoad, OpSkip, OpRet, OpLoopEnd:
 		return i.op.String()
-	case OpMov, OpSkip:
+	case OpMov:
 		return fmt.Sprintf("%s %s", i.op, i.tp)
-	case OpMovOpt, OpSkipOpt:
+	case OpMovOpt:
 		return fmt.Sprintf("%s %s %d", i.op, i.tp, i.val)
 	case OpJmp, OpCall, OpLoopStart:
 		return fmt.Sprintf("%s -> %d", i.op, i.pos)

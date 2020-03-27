@@ -40,11 +40,11 @@ var (
 		},
 
 		fixture{
-			input:  []byte{byte(OpMovOpt), byte(TypeBool), 123},
+			input:  []byte{byte(OpMovOpt), 123, byte(TypeBool)},
 			expect: Instruction{op: OpMovOpt, tp: TypeBool, val: 123},
 		},
 		fixture{
-			input:  []byte{byte(OpMovOpt), byte(TypeInt), 123},
+			input:  []byte{byte(OpMovOpt), 123, byte(TypeInt)},
 			expect: Instruction{op: OpMovOpt, tp: TypeInt, val: 123},
 		},
 
@@ -58,17 +58,22 @@ var (
 		},
 
 		fixture{
-			input:  []byte{byte(OpJmpEq), 123, 1},
+			input:  []byte{byte(OpJmpEq), 1, 123},
 			expect: Instruction{op: OpJmpEq, pos: 123, val: 1},
 		},
 		fixture{
-			input:  []byte{byte(OpJmpEq), byte(negativeJmp), 1},
+			input:  []byte{byte(OpJmpEq), 1, byte(negativeJmp)},
 			expect: Instruction{op: OpJmpEq, pos: negativeJmp, val: 1},
+		},
+
+		fixture{
+			input:  []byte{byte(OpSkip)},
+			expect: Instruction{op: OpSkip},
 		},
 	}
 )
 
-func TestDecoder(t *testing.T) {
+func TestInstructionDecoder(t *testing.T) {
 	for _, f := range decodeFixtures {
 		inst := decodeInstruction(f.input)
 		assert.Exactly(t, inst, f.expect)
