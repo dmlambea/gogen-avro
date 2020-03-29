@@ -3,29 +3,29 @@ package vm
 import (
 	"fmt"
 
-	"github.com/actgardner/gogen-avro/vm/setter"
+	"github.com/actgardner/gogen-avro/vm/setters"
 )
 
 type engine struct {
-	prog   Program
-	input  ByteReader
-	setter setter.Setter
+	prog       Program
+	input      ByteReader
+	mainSetter setters.Setter
 }
 
-func NewEngine(p Program, setter setter.Setter) engine {
+func NewEngine(p Program, setter setters.Setter) engine {
 	return engine{
-		prog:   p,
-		setter: setter,
+		prog:       p,
+		mainSetter: setter,
 	}
 }
 
 // Run starts the engine
 func (e engine) Run(input ByteReader) error {
 	e.input = input
-	return e.doRun(0, 0)
+	return e.doRun(0, 0, e.mainSetter)
 }
 
-func (e engine) doRun(depth, pc int) (err error) {
+func (e engine) doRun(depth, pc int, setter setters.Setter) (err error) {
 	var acc int64
 	var obj interface{}
 
@@ -36,6 +36,10 @@ func (e engine) doRun(depth, pc int) (err error) {
 			return fmt.Errorf("bad instruction %+v at %d", inst, pc)
 		case OpHalt:
 			return nil
+		case OpSort:
+			if err = setter.Init(inst.val.([]int)); err != nil {
+				return err
+			}
 		case OpLoad:
 			if acc, err = readLong(e.input); err != nil {
 				return err
@@ -44,7 +48,7 @@ func (e engine) doRun(depth, pc int) (err error) {
 			if obj, err = readInput(inst.tp, e.input); err != nil {
 				return err
 			}
-			if err = e.setter.Set(obj); err != nil {
+			if err = setter.Execute(setters.SetField, obj); err != nil {
 				return err
 			}
 		case OpMovOpt:
@@ -52,37 +56,55 @@ func (e engine) doRun(depth, pc int) (err error) {
 				return err
 			}
 			switch {
-			case acc == int64(inst.val):
+			case acc == int64(inst.val.(int)):
 				if obj, err = readInput(inst.tp, e.input); err != nil {
 					return err
 				}
-				if err = e.setter.Set(obj); err != nil {
+				if err = setter.Execute(setters.SetField, obj); err != nil {
 					return err
 				}
 			default:
-				if err = e.setter.Skip(); err != nil {
+				if err = setter.Execute(setters.SkipField, nil); err != nil {
 					return err
 				}
+			}
+		case OpDiscard:
+			if obj, err = readInput(inst.tp, e.input); err != nil {
+				return err
+			}
+		case OpSkip:
+			if err = setter.Execute(setters.SkipField, nil); err != nil {
+				return err
 			}
 		case OpJmp:
 			pc = inst.pos
 			// Avoid incrementing the PC
 			continue
 		case OpJmpEq:
-			if acc == int64(inst.val) {
+			if acc == int64(inst.val.(int)) {
 				pc = inst.pos
 				// Avoid incrementing the PC if the jump succeeds
 				continue
 			}
 		case OpCall:
-			if err = e.doRun(depth+1, inst.pos); err != nil {
+			var innerSetter setters.Setter
+			if innerSetter, err = setter.GetInner(); err != nil {
+				return err
+			}
+			if err = e.doRun(depth+1, inst.pos, innerSetter); err != nil {
 				return err
 			}
 		case OpLoopStart:
-			if err = e.runLoop(depth+1, pc+1); err != nil {
+			var innerSetter setters.Setter
+			if innerSetter, err = setter.GetInner(); err != nil {
+				return err
+			}
+			if err = e.runLoop(depth+1, pc+1, innerSetter); err != nil {
 				return
 			}
 			pc = inst.pos
+			// Avoid incrementing the PC
+			continue
 		case OpRet, OpLoopEnd:
 			if depth == 0 {
 				return fmt.Errorf("can't %s from main flow at %d", inst.op, pc)
@@ -95,7 +117,7 @@ func (e engine) doRun(depth, pc int) (err error) {
 }
 
 // runLoop is a convenience method to allow running over block-serialized types (maps, arrays)
-func (e engine) runLoop(depth, pc int) (err error) {
+func (e engine) runLoop(depth, pc int, setter setters.Setter) (err error) {
 	for {
 		// Load block length. If no more blocks (lenght==0) or an error occurs, go back
 		count, err := readLong(e.input)
@@ -112,11 +134,16 @@ func (e engine) runLoop(depth, pc int) (err error) {
 			count = -count
 		}
 
-		// Inform the setter about the number of items to be expected within this block
-		e.setter.Init(int(count))
+		// Inform the block owner's setter about the number of items to be expected within this block
+		setter.Init(int(count))
+
+		innerSetter, err := setter.GetInner()
+		if err != nil {
+			return err
+		}
 		for ; count > 0; count-- {
 			// Consume one item type each time
-			if err = e.doRun(depth, pc); err != nil {
+			if err = e.doRun(depth, pc, innerSetter); err != nil {
 				return err
 			}
 		}
