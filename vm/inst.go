@@ -9,7 +9,7 @@ import (
 type Instruction struct {
 	op  Opcode
 	tp  Type
-	val byte
+	val interface{}
 	pos int
 }
 
@@ -22,10 +22,13 @@ func (i Instruction) Size() int {
 	switch i.op {
 	case OpError, OpHalt, OpLoad, OpSkip, OpRet, OpLoopEnd:
 		return 1
-	case OpMov, OpJmp, OpCall, OpLoopStart:
+	case OpMov, OpDiscard, OpJmp, OpCall, OpLoopStart:
 		return 2
 	case OpMovOpt, OpJmpEq:
 		return 3
+	case OpSort:
+		data := i.val.([]int)
+		return 2 + len(data)
 	default:
 		panic(fmt.Sprintf("invalid instruction opCode %x", i.op))
 	}
@@ -37,18 +40,27 @@ func decodeInstruction(input []byte) (inst Instruction) {
 	switch Opcode(input[0]) {
 	case OpHalt:
 		inst = Halt()
+	case OpSort:
+		l := int(input[1])
+		data := make([]int, l)
+		for i := 0; i < l; i++ {
+			data[i] = int(input[2+i])
+		}
+		inst = Sort(data)
 	case OpLoad:
 		inst = Load()
 	case OpMov:
 		inst = Mov(Type(input[1]))
 	case OpMovOpt:
-		inst = MovOpt(input[1], Type(input[2]))
+		inst = MovOpt(int(input[1]), Type(input[2]))
+	case OpDiscard:
+		inst = Discard(Type(input[1]))
 	case OpSkip:
 		inst = Skip()
 	case OpJmp:
 		inst = Jmp(input[1])
 	case OpJmpEq:
-		inst = JmpEq(input[1], input[2])
+		inst = JmpEq(int(input[1]), input[2])
 	case OpCall:
 		inst = Call(input[1])
 	case OpRet:
@@ -67,6 +79,10 @@ func Halt() Instruction {
 	return Instruction{op: OpHalt}
 }
 
+func Sort(data []int) Instruction {
+	return Instruction{op: OpSort, val: data}
+}
+
 func Load() Instruction {
 	return Instruction{op: OpLoad}
 }
@@ -75,8 +91,12 @@ func Mov(t Type) Instruction {
 	return Instruction{op: OpMov, tp: t}
 }
 
-func MovOpt(val byte, t Type) Instruction {
+func MovOpt(val int, t Type) Instruction {
 	return Instruction{op: OpMovOpt, tp: t, val: val}
+}
+
+func Discard(t Type) Instruction {
+	return Instruction{op: OpDiscard, tp: t}
 }
 
 func Skip() Instruction {
@@ -87,7 +107,7 @@ func Jmp(relByte byte) Instruction {
 	return Instruction{op: OpJmp, pos: relByteToInt(relByte)}
 }
 
-func JmpEq(val byte, relByte byte) Instruction {
+func JmpEq(val int, relByte byte) Instruction {
 	return Instruction{op: OpJmpEq, pos: relByteToInt(relByte), val: val}
 }
 
@@ -126,6 +146,8 @@ func (i Instruction) String() string {
 		return fmt.Sprintf("%s -> %d", i.op, i.pos)
 	case OpJmpEq:
 		return fmt.Sprintf("%s %d -> %d", i.op, i.val, i.pos)
+	case OpSort:
+		return fmt.Sprintf("%s %v", i.op, i.val)
 	default:
 		return fmt.Sprintf("<invalid opCode %d>", i.op)
 	}

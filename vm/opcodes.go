@@ -11,10 +11,12 @@ type Opcode byte
 const (
 	OpError     Opcode = iota // Zero-value opcode is a bug in the program
 	OpHalt                    // Stops execution (TODO with exit code xx)
+	OpSort                    // Instructs the VM to reorder the reader's fields when reading
 	OpLoad                    // Loads a word from input into accumulator
 	OpMov                     // Moves input data from the operand type tt to the current placeholder
 	OpMovOpt                  // Executes Load and then executes Mov if the acc is equal to val
-	OpSkip                    // Skips input data from the operand type tt
+	OpDiscard                 // Discards as much data from input as required for type tt
+	OpSkip                    // Skips reading the current field
 	OpJmp                     // jumps to the relative position pp
 	OpJmpEq                   // jumps to the relative position pp if acc is equal to val
 	OpCall                    // calls a subroutine
@@ -29,12 +31,16 @@ func (op Opcode) String() string {
 		return "<error>"
 	case OpHalt:
 		return "halt"
+	case OpSort:
+		return "sort"
 	case OpLoad:
 		return "load"
 	case OpMov:
 		return "mov"
 	case OpMovOpt:
 		return "movOpt"
+	case OpDiscard:
+		return "discard"
 	case OpSkip:
 		return "skip"
 	case OpJmp:
