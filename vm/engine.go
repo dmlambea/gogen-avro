@@ -27,93 +27,118 @@ func (e engine) Run(input ByteReader) error {
 
 func (e engine) doRun(depth, pc int, setter setters.Setter) (err error) {
 	var acc int64
-	var obj interface{}
+	var inst Instruction
+
+	loadFn := func() {
+		acc, err = readLong(e.input)
+	}
+
+	movFn := func() {
+		var obj interface{}
+		obj, err = readInput(inst.tp, e.input)
+		if err == nil {
+			err = setter.Execute(setters.SetField, obj)
+		}
+	}
+
+	callFn := func(s setters.Setter) {
+		var innerSetter setters.Setter
+		if innerSetter, err = s.GetInner(); err != nil {
+			return
+		}
+		err = e.doRun(depth+1, pc+inst.pos+1, innerSetter)
+	}
+
+	loopFn := func(s setters.Setter) {
+		var innerSetter setters.Setter
+		if innerSetter, err = s.GetInner(); err != nil {
+			return
+		}
+		err = e.runLoop(depth+1, pc+1, innerSetter)
+	}
+
+	eqFn := func(fn func()) {
+		if loadFn(); err == nil {
+			if acc == inst.val.(int64) {
+				fn()
+			} else {
+				err = setter.Execute(setters.SkipField, nil)
+			}
+		}
+	}
 
 	for {
-		inst := e.prog.instructions[pc]
+		inst = e.prog.instructions[pc]
 		switch inst.op {
 		case OpError:
-			return fmt.Errorf("bad instruction %+v at %d", inst, pc)
+			err = fmt.Errorf("bad instruction %+v at %d", inst, pc)
 		case OpHalt:
 			return nil
 		case OpSort:
-			if err = setter.Init(inst.val.([]int)); err != nil {
-				return err
-			}
+			err = setter.Init(inst.val.([]int))
 		case OpLoad:
-			if acc, err = readLong(e.input); err != nil {
-				return err
-			}
+			loadFn()
 		case OpMov:
-			if obj, err = readInput(inst.tp, e.input); err != nil {
-				return err
-			}
-			if err = setter.Execute(setters.SetField, obj); err != nil {
-				return err
-			}
-		case OpMovOpt:
-			if acc, err = readLong(e.input); err != nil {
-				return err
-			}
-			switch {
-			case acc == int64(inst.val.(int)):
-				if obj, err = readInput(inst.tp, e.input); err != nil {
-					return err
-				}
-				if err = setter.Execute(setters.SetField, obj); err != nil {
-					return err
-				}
-			default:
-				if err = setter.Execute(setters.SkipField, nil); err != nil {
-					return err
-				}
-			}
+			movFn()
+		case OpMovEq:
+			eqFn(movFn)
 		case OpDiscard:
-			if obj, err = readInput(inst.tp, e.input); err != nil {
-				return err
+			if inst.tp != TypeBlock {
+				_, err = readInput(inst.tp, e.input)
+			} else {
+				err = e.doRun(depth+1, inst.pos, setters.NewSkipperSetter())
+			}
+		case OpDiscardEq:
+			var fn func()
+			if inst.tp != TypeBlock {
+				fn = func() {
+					_, err = readInput(inst.tp, e.input)
+				}
+			} else {
+				fn = func() {
+					err = e.doRun(depth+1, inst.pos, setters.NewSkipperSetter())
+				}
+			}
+			if loadFn(); err == nil {
+				if acc == int64(inst.val.(int32)) {
+					fn()
+				}
 			}
 		case OpSkip:
-			if err = setter.Execute(setters.SkipField, nil); err != nil {
-				return err
-			}
+			err = setter.Execute(setters.SkipField, nil)
 		case OpJmp:
-			pc = inst.pos
-			// Avoid incrementing the PC
-			continue
+			pc += inst.pos
 		case OpJmpEq:
 			if acc == int64(inst.val.(int)) {
-				pc = inst.pos
-				// Avoid incrementing the PC if the jump succeeds
-				continue
+				pc += inst.pos
 			}
 		case OpCall:
-			var innerSetter setters.Setter
-			if innerSetter, err = setter.GetInner(); err != nil {
-				return err
-			}
-			if err = e.doRun(depth+1, inst.pos, innerSetter); err != nil {
-				return err
-			}
-		case OpLoopStart:
-			var innerSetter setters.Setter
-			if innerSetter, err = setter.GetInner(); err != nil {
-				return err
-			}
-			if err = e.runLoop(depth+1, pc+1, innerSetter); err != nil {
-				return
-			}
-			pc = inst.pos
-			// Avoid incrementing the PC
-			continue
-		case OpRet, OpLoopEnd:
+			callFn(setter)
+		case OpCallEq:
+			eqFn(func() {
+				callFn(setter)
+			})
+		case OpLoop:
+			loopFn(setter)
+			pc += inst.pos
+		case OpLoopEq:
+			eqFn(func() {
+				loopFn(setter)
+			})
+			pc += inst.pos
+		case OpRet, OpEndLoop:
 			if depth == 0 {
-				return fmt.Errorf("can't %s from main flow at %d", inst.op, pc)
+				err = fmt.Errorf("can't %s from main flow at %d", inst.op, pc)
 			}
+			return
+		}
+		// General error occurred in executing the instruction
+		if err != nil {
 			return
 		}
 		pc++
 	}
-	return nil
+	return
 }
 
 // runLoop is a convenience method to allow running over block-serialized types (maps, arrays)
