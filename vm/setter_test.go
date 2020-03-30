@@ -44,28 +44,18 @@ var (
 
 	readerByteCode = []byte{
 		byte(OpMov), byte(TypeInt),
-		byte(OpMovOpt), 0, byte(TypeInt),
-		byte(OpMovOpt), 0, byte(TypeInt),
-		byte(OpCall), 4,
-		byte(OpLoad),
-		byte(OpJmpEq), 0, 1,
-		byte(OpCall), 8,
+		byte(OpMovEq), 0, byte(TypeInt),
+		byte(OpMovEq), 0, byte(TypeInt),
+		byte(OpCall), 2,
+		byte(OpCallEq), 1, 4,
 		byte(OpHalt),
 		// Node reader
 		byte(OpMov), byte(TypeString),
-		byte(OpLoad),
-		byte(OpJmpEq), 1, 2,
-		byte(OpSkip),
-		byte(OpRet),
-		byte(OpCall), 1,
+		byte(OpCallEq), 1, 1,
 		byte(OpRet),
 		// Address reader
 		byte(OpMov), byte(TypeInt),
-		byte(OpLoad),
-		byte(OpJmpEq), 0, 2,
-		byte(OpCall), -4 & 0xff,
-		byte(OpRet),
-		byte(OpSkip),
+		byte(OpCallEq), 1, -2 & 0xff,
 		byte(OpRet),
 	}
 
@@ -93,19 +83,11 @@ var (
 		byte(OpHalt),
 		// Node reader
 		byte(OpMov), byte(TypeString),
-		byte(OpLoad),
-		byte(OpJmpEq), 1, 2,
-		byte(OpSkip),
-		byte(OpRet),
-		byte(OpCall), 1,
+		byte(OpCallEq), 1, 1,
 		byte(OpRet),
 		// Address reader
 		byte(OpMov), byte(TypeInt),
-		byte(OpLoad),
-		byte(OpJmpEq), 0, 2,
-		byte(OpCall), -4 & 0xff,
-		byte(OpRet),
-		byte(OpSkip),
+		byte(OpCallEq), 1, -2 & 0xff,
 		byte(OpRet),
 	}
 )

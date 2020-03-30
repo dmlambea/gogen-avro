@@ -39,17 +39,17 @@ var (
 
 	complexMapReaderByteCode = []byte{
 		byte(OpMov), byte(TypeInt),
-		byte(OpMovOpt), 0, byte(TypeInt),
-		byte(OpLoopStart), 3,
+		byte(OpMovEq), 0, byte(TypeInt),
+		byte(OpLoop), 3,
 		byte(OpMov), byte(TypeString), // Outer Map key
 		byte(OpCall), byte(2), // Call NestedMapRecord
-		byte(OpLoopEnd),
+		byte(OpEndLoop),
 		byte(OpHalt),
 		byte(OpMov), byte(TypeFloat), // NestedMapRecord
-		byte(OpLoopStart), 3,
+		byte(OpLoop), 3,
 		byte(OpMov), byte(TypeString), // Inner Map key
 		byte(OpMov), byte(TypeInt), // Inner map values
-		byte(OpLoopEnd),
+		byte(OpEndLoop),
 		byte(OpRet),
 	}
 
@@ -69,10 +69,10 @@ var (
 
 	simpleMapReaderByteCode = []byte{
 		byte(OpMov), byte(TypeInt),
-		byte(OpLoopStart), 3,
+		byte(OpLoop), 3,
 		byte(OpMov), byte(TypeString), // Outer Map key
 		byte(OpMov), byte(TypeString), // Outer Map value
-		byte(OpLoopEnd),
+		byte(OpEndLoop),
 		byte(OpHalt),
 	}
 )
