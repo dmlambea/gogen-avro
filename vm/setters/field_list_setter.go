@@ -189,7 +189,15 @@ func (s *fieldListSetter) setPointerElem(elem reflect.Value, value interface{}) 
 	default:
 		return err
 	}
-	elem.Set(reflect.ValueOf(value))
+
+	v := reflect.ValueOf(value)
+	if !v.Type().AssignableTo(elem.Type()) {
+		if !v.Type().ConvertibleTo(elem.Type()) {
+			return fmt.Errorf("incompatible types: %s cannot be assigned to %s", v.Type(), elem.Type())
+		}
+		v = v.Convert(elem.Type())
+	}
+	elem.Set(v)
 	return nil
 }
 
