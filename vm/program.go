@@ -2,24 +2,17 @@ package vm
 
 import (
 	"fmt"
+	"io"
 	"strings"
 )
 
-// Compile bytecode onto a runnable program
+// NewProgram compiles bytecode onto a runnable program
 func NewProgram(byteCode []byte) (Program, error) {
 	p := Program{}
 	for i, pos := 0, 0; i < len(byteCode); {
 		inst := decodeInstruction(byteCode[i:])
-		switch inst.op {
-		case OpError:
+		if inst.op == OpError {
 			return p, fmt.Errorf("bad instruction %#v at byteCode pos %d", inst, i)
-		case OpJmp, OpJmpEq, OpCall, OpLoopStart:
-			// Jumps are always relative to the instruction following the current,
-			// so they have to have added the current abs pos, plus one
-			inst.pos = inst.pos + pos + 1
-			if inst.pos < 0 {
-				return p, fmt.Errorf("bad jmp %#v at byteCode pos %d", inst, i)
-			}
 		}
 		p.instructions = append(p.instructions, inst)
 		i += inst.Size()
@@ -34,6 +27,19 @@ type Program struct {
 
 	// A list of errors that can be triggered by halt(x), where x is the index in this array + 1
 	errs []string
+}
+
+// WriteTo implements io.Writer for this Program
+func (p Program) WriteTo(w io.Writer) (int64, error) {
+	var sum int64 = 0
+	for i := range p.instructions {
+		n, err := p.instructions[i].WriteTo(w)
+		sum += n
+		if err != nil {
+			return sum, err
+		}
+	}
+	return sum, nil
 }
 
 func (p Program) String() string {
