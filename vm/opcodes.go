@@ -14,15 +14,18 @@ const (
 	OpSort                    // Instructs the VM to reorder the reader's fields when reading
 	OpLoad                    // Loads a word from input into accumulator
 	OpMov                     // Moves input data from the operand type tt to the current placeholder
-	OpMovOpt                  // Executes Load and then executes Mov if the acc is equal to val
+	OpMovEq                   // Executes Load and then executes Mov if the acc is equal to val
 	OpDiscard                 // Discards as much data from input as required for type tt
+	OpDiscardEq               // Discards as much data from input as required for type tt
 	OpSkip                    // Skips reading the current field
 	OpJmp                     // jumps to the relative position pp
 	OpJmpEq                   // jumps to the relative position pp if acc is equal to val
 	OpCall                    // calls a subroutine
+	OpCallEq                  // calls a subroutine
 	OpRet                     // returns from a subroutine
-	OpLoopStart               // Handles the loop for decoding of blocks
-	OpLoopEnd                 // Closes the innermost loop
+	OpLoop                    // Handles the loop for decoding of blocks
+	OpLoopEq                  // Handles the loop for decoding of blocks
+	OpEndLoop                 // Closes the innermost loop
 )
 
 func (op Opcode) String() string {
@@ -37,10 +40,12 @@ func (op Opcode) String() string {
 		return "load"
 	case OpMov:
 		return "mov"
-	case OpMovOpt:
-		return "movOpt"
+	case OpMovEq:
+		return "movEq"
 	case OpDiscard:
 		return "discard"
+	case OpDiscardEq:
+		return "discardEq"
 	case OpSkip:
 		return "skip"
 	case OpJmp:
@@ -49,11 +54,13 @@ func (op Opcode) String() string {
 		return "jmpEq"
 	case OpCall:
 		return "call"
+	case OpCallEq:
+		return "callEq"
 	case OpRet:
 		return "ret"
-	case OpLoopStart:
-		return "loopStart"
-	case OpLoopEnd:
+	case OpLoop:
+		return "loop"
+	case OpEndLoop:
 		return "loopEnd"
 	default:
 		return fmt.Sprintf("<invalid opCode %d>", op)
