@@ -11,6 +11,7 @@ type Type byte
 // Constant values for Type
 const (
 	TypeError Type = iota
+	// TODO: remove TypeNull as it will never get its way into the VM
 	TypeNull
 	TypeBool
 	TypeInt
@@ -19,9 +20,14 @@ const (
 	TypeDouble
 	TypeString
 	TypeBytes
+
+	primitiveTypesMarker
+
+	TypeRecord // This type is special for discarding record types only
+	TypeBlock  // This type is special for discarding blocks types only
 )
 
-// TypeFromString is a utility function to get a Type from its name
+// TypeFromString is a utility function to get a primitive Type from its name
 func TypeFromString(name string) Type {
 	switch strings.ToLower(name) {
 	case "null":
@@ -65,6 +71,10 @@ func (t Type) String() string {
 		return "string"
 	case TypeBytes:
 		return "bytes"
+	case TypeRecord:
+		return "record"
+	case TypeBlock:
+		return "block"
 	default:
 		return fmt.Sprintf("<invalid type %d>", t)
 	}
