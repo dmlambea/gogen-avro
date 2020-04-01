@@ -2,368 +2,82 @@ package compiler
 
 import (
 	"fmt"
+	"strings"
 
-	"github.com/actgardner/gogen-avro/schema"
 	"github.com/actgardner/gogen-avro/vm"
 )
 
-type irMethod struct {
-	name    string
-	offset  int
-	body    []irInstruction
-	program *irProgram
-}
-
-func newIRMethod(name string, program *irProgram) *irMethod {
-	return &irMethod{
-		name:    name,
-		body:    make([]irInstruction, 0),
-		program: program,
+func newMethod(name string) *method {
+	return &method{
+		name:       name,
+		methodRefs: make(map[int]*method),
 	}
 }
 
-func (p *irMethod) addLiteral(op vm.Op, operand int) {
-	p.body = append(p.body, &literalIRInstruction{vm.Instruction{op, operand}})
+type method struct {
+	name       string
+	offset     int
+	code       []vm.Instruction
+	methodRefs map[int]*method
 }
 
-func (p *irMethod) addMethodCall(method string) {
-	p.body = append(p.body, &methodCallIRInstruction{method})
+// Size returns the number of instructions of this method
+func (m method) Size() int {
+	return len(m.code)
 }
 
-func (p *irMethod) addBlockStart() int {
-	id := len(p.program.blocks)
-	p.program.blocks = append(p.program.blocks, &irBlock{})
-	p.body = append(p.body, &blockStartIRInstruction{id})
-	return id
+func (m method) IsAnon() bool {
+	return m.name == ""
 }
 
-func (p *irMethod) addBlockEnd(id int) {
-	p.body = append(p.body, &blockEndIRInstruction{id})
-}
-
-func (p *irMethod) addSwitchStart(size, errorId int) int {
-	id := len(p.program.switches)
-	p.program.switches = append(p.program.switches, &irSwitch{})
-	p.body = append(p.body, &switchStartIRInstruction{id, size, errorId})
-	return id
-}
-
-func (p *irMethod) addSwitchCase(id, writerIndex, readerIndex int) {
-	sw := p.program.switches[id]
-	sw.addCase()
-	c := newSwithCaseIRInstruction(id, writerIndex, readerIndex, false, sw.nextCaseNeedsJump)
-	p.body = append(p.body, c)
-	// Non-rejecting cases with valid readers are not empty
-	// Therefore next case must generate an initial jump to close this one
-	sw.nextCaseNeedsJump = (readerIndex != -1)
-}
-
-func (p *irMethod) addSwitchRejectCase(id, writerIndex int) {
-	sw := p.program.switches[id]
-	sw.addCase()
-	p.body = append(p.body, newSwithCaseIRInstruction(id, writerIndex, -1, true, sw.nextCaseNeedsJump))
-	sw.nextCaseNeedsJump = false
-}
-
-func (p *irMethod) addSwitchEnd(id int) {
-	p.body = append(p.body, &switchEndIRInstruction{id})
-}
-
-func (p *irMethod) addError(msg string) int {
-	id := len(p.program.errors) + 1
-	p.program.errors = append(p.program.errors, msg)
-	return id
-}
-
-func (p *irMethod) VMLength() int {
-	len := 0
-	for _, inst := range p.body {
-		len += inst.VMLength()
+func (m method) String() string {
+	var buf strings.Builder
+	if m.IsAnon() {
+		buf.WriteString("<anon>")
+	} else {
+		buf.WriteString(m.name)
 	}
-	return len
+	buf.WriteString(":\n")
+	for idx, inst := range m.code {
+		buf.WriteString(fmt.Sprintf("  %03d: %s", idx, inst.String()))
+		if sub, ok := m.methodRefs[idx]; ok {
+			buf.WriteString("\t --> ")
+			buf.WriteString(sub.name)
+		}
+		buf.WriteString("\n")
+	}
+	return buf.String()
 }
 
-func (p *irMethod) compileType(writer, reader schema.AvroType) error {
-	log("compileType()\n writer:\n %v\n---\nreader: %v\n---\n", writer, reader)
-
-	// Derreference refs
-	if wref, ok := writer.(*schema.Reference); ok {
-		writer = wref.RefType()
-	}
-	if rref, ok := reader.(*schema.Reference); ok {
-		reader = rref.RefType()
-	}
-
-	// If the writer is not a union but the reader is, try and find the first matching type in the union as a target
-	if !isUnionField(writer) {
-		if isUnionField(reader) {
-			readerUnion := reader.(*schema.UnionField)
-			for readerIndex, r := range readerUnion.Children() {
-				if writer.IsReadableBy(r, make(map[schema.QualifiedName]interface{})) {
-					p.addLiteral(vm.SetLong, readerIndex)
-					p.addLiteral(vm.Set, vm.Long)
-					p.addLiteral(vm.Enter, readerIndex)
-					err := p.compileType(writer, r)
-					if err != nil {
-						return err
-					}
-					p.addLiteral(vm.Exit, vm.NoopField)
-					return nil
-				}
-			}
-			return fmt.Errorf("Incompatible types: %v %v", reader, writer)
-		}
-	}
-
-	switch v := writer.(type) {
-	case *schema.Reference:
-		return fmt.Errorf("Unexpected reference type in writer %v", writer)
-	case *schema.RecordDefinition:
-		if readerRef, ok := reader.(*schema.RecordDefinition); ok || reader == nil {
-			var recordMethodName string
-			if reader == nil {
-				recordMethodName = fmt.Sprintf("record-r-%v", v.Name())
-			} else {
-				recordMethodName = fmt.Sprintf("record-rw-%v", v.Name())
-			}
-
-			if _, ok := p.program.methods[recordMethodName]; !ok {
-				method := p.program.createMethod(recordMethodName)
-				err := method.compileRecord(v, readerRef)
-				if err != nil {
-					return err
-				}
-			}
-			p.addMethodCall(recordMethodName)
-			return nil
-		}
-		return fmt.Errorf("Incompatible types: %v %v", reader, writer)
-	case *schema.FixedDefinition:
-		if readerRef, ok := reader.(*schema.FixedDefinition); ok || reader == nil {
-			return p.compileFixed(v, readerRef)
-		}
-		return fmt.Errorf("Incompatible types: %v %v", reader, writer)
-	case *schema.EnumDefinition:
-		if readerRef, ok := reader.(*schema.EnumDefinition); ok || reader == nil {
-			return p.compileEnum(v, readerRef)
-		}
-		return fmt.Errorf("Incompatible types: %v %v", reader, writer)
-	case *schema.MapField:
-		if readerRef, ok := reader.(*schema.MapField); ok || reader == nil {
-			return p.compileMap(v, readerRef)
-		}
-		return fmt.Errorf("Incompatible types: %v %v", reader, writer)
-	case *schema.ArrayField:
-		if readerRef, ok := reader.(*schema.ArrayField); ok || reader == nil {
-			return p.compileArray(v, readerRef)
-		}
-		return fmt.Errorf("Incompatible types: %v %v", reader, writer)
-	case *schema.UnionField:
-		return p.compileUnion(v, reader)
-	case *schema.IntField:
-		p.addLiteral(vm.Read, vm.Int)
-		if reader != nil {
-			p.addLiteral(vm.Set, vm.Int)
-		}
-		return nil
-	case *schema.LongField:
-		p.addLiteral(vm.Read, vm.Long)
-		if reader != nil {
-			p.addLiteral(vm.Set, vm.Long)
-		}
-		return nil
-	case *schema.StringField:
-		p.addLiteral(vm.Read, vm.String)
-		if reader != nil {
-			p.addLiteral(vm.Set, vm.String)
-		}
-		return nil
-	case *schema.BytesField:
-		p.addLiteral(vm.Read, vm.Bytes)
-		if reader != nil {
-			p.addLiteral(vm.Set, vm.Bytes)
-		}
-		return nil
-	case *schema.FloatField:
-		p.addLiteral(vm.Read, vm.Float)
-		if reader != nil {
-			p.addLiteral(vm.Set, vm.Float)
-		}
-		return nil
-	case *schema.DoubleField:
-		p.addLiteral(vm.Read, vm.Double)
-		if reader != nil {
-			p.addLiteral(vm.Set, vm.Double)
-		}
-		return nil
-	case *schema.BoolField:
-		p.addLiteral(vm.Read, vm.Boolean)
-		if reader != nil {
-			p.addLiteral(vm.Set, vm.Boolean)
-		}
-		return nil
-	case *schema.NullField:
-		return nil
-	}
-	return fmt.Errorf("Unsupported type: %t", writer)
+// record adds a record instruction to a method, and registers the calling instruction's
+// relative position, so that the linker can efficiently locate it.
+func (m *method) record(anotherMethod *method) int {
+	return m.addJumpInstruction(vm.Record(0), anotherMethod)
 }
 
-func (p *irMethod) compileMap(writer, reader *schema.MapField) error {
-	log("compileMap()\n writer:\n %v\n---\nreader: %v\n---\n", writer, reader)
-	blockId := p.addBlockStart()
-	p.addLiteral(vm.Read, vm.String)
-	var readerType schema.AvroType
-	if reader != nil {
-		p.addLiteral(vm.AppendMap, vm.Unused)
-		readerType = reader.ItemType()
-	}
-	err := p.compileType(writer.ItemType(), readerType)
-	if err != nil {
-		return err
-	}
-	if reader != nil {
-		p.addLiteral(vm.Exit, vm.NoopField)
-	}
-	p.addBlockEnd(blockId)
-	return nil
+// discardRecord adds a discard instruction for a method, and registers the calling instruction's
+// relative position, so that the linker can efficiently locate it.
+func (m *method) discardRecord(anotherMethod *method) int {
+	return m.addJumpInstruction(vm.DiscardRecord(0), anotherMethod)
 }
 
-func (p *irMethod) compileArray(writer, reader *schema.ArrayField) error {
-	log("compileArray()\n writer:\n %v\n---\nreader: %v\n---\n", writer, reader)
-	blockId := p.addBlockStart()
-	var readerType schema.AvroType
-	if reader != nil {
-		p.addLiteral(vm.AppendArray, vm.Unused)
-		readerType = reader.ItemType()
-	}
-	err := p.compileType(writer.ItemType(), readerType)
-	if err != nil {
-		return err
-	}
-	if reader != nil {
-		p.addLiteral(vm.Exit, vm.NoopField)
-	}
-	p.addBlockEnd(blockId)
-	return nil
+// block adds a block instruction and returns its position within the method.
+// The linker would me much more inefficient matching block start/ends, so the fastest way is
+// to compute the relative jump at compile time.
+func (m *method) block() int {
+	return m.addJumpInstruction(vm.Block(0), nil)
 }
 
-func (p *irMethod) compileRecord(writer, reader *schema.RecordDefinition) error {
-	// Look up whether there's a corresonding target field and if so, parse the source field into that target
-	log("compileRecord()\n writer:\n %v\n---\nreader: %v\n---\n", writer, reader)
-	if reader != nil {
-		for _, field := range reader.Fields() {
-			if writerField := writer.GetReaderField(field); writerField == nil {
-				if !field.HasDefault() {
-					return fmt.Errorf("Incompatible schemas: field %v in reader is not present in writer and has no default value", field.Name())
-				}
-
-				if field.Type().IsOptional() {
-					// Avoid generating code for optional fields having null default values
-					continue
-				}
-				p.addLiteral(vm.SetDefault, field.Index())
-			}
-		}
+func (m *method) addJumpInstruction(inst vm.Instruction, anotherMethod *method) int {
+	instPos := len(m.code)
+	m.code = append(m.code, inst)
+	if anotherMethod != nil {
+		m.methodRefs[instPos] = anotherMethod
 	}
-
-	for _, field := range writer.Fields() {
-		var readerType schema.AvroType
-		var readerField *schema.Field
-		if reader != nil {
-			readerField = reader.GetReaderField(field)
-			if readerField != nil {
-				if !field.Type().IsReadableBy(readerField.Type(), make(map[schema.QualifiedName]interface{})) {
-					return fmt.Errorf("Incompatible schemas: field %v in reader has incompatible type in writer", field.Name())
-				}
-				readerType = readerField.Type()
-				p.addLiteral(vm.Enter, readerField.Index())
-			}
-		}
-		err := p.compileType(field.Type(), readerType)
-		if err != nil {
-			return err
-		}
-		if readerField != nil {
-			p.addLiteral(vm.Exit, vm.NoopField)
-		}
-	}
-	return nil
+	return instPos
 }
 
-func (p *irMethod) compileEnum(writer, reader *schema.EnumDefinition) error {
-	log("compileEnum()\n writer:\n %v\n---\nreader: %v\n---\n", writer, reader)
-	p.addLiteral(vm.Read, vm.Int)
-	if reader != nil {
-		p.addLiteral(vm.Set, vm.Int)
-	}
-	return nil
-}
-
-func (p *irMethod) compileFixed(writer, reader *schema.FixedDefinition) error {
-	log("compileFixed()\n writer:\n %v\n---\nreader: %v\n---\n", writer, reader)
-	p.addLiteral(vm.Read, 11+writer.SizeBytes())
-	if reader != nil {
-		p.addLiteral(vm.Set, vm.Bytes)
-	}
-	return nil
-}
-
-func (p *irMethod) compileUnion(writer *schema.UnionField, reader schema.AvroType) error {
-	log("compileUnion()\n writer:\n %v\n---\nreader: %v\n---\n", writer, reader)
-
-	p.addLiteral(vm.Read, vm.Long)
-	errId := p.addError("Unsupported type for union")
-	switchId := p.addSwitchStart(len(writer.Children()), errId)
-writer:
-	for i, t := range writer.Children() {
-		switch {
-		case reader == nil:
-			// If the reader is nil, just read the field and move on
-			p.addSwitchCase(switchId, i, -1)
-			err := p.compileType(t, reader)
-			if err != nil {
-				return err
-			}
-		case writer.IsOptional() && writer.OptionalIndex() == i:
-			// Optional fields' handler
-			p.addSwitchRejectCase(switchId, i)
-			continue writer
-		case isUnionField(reader):
-			unionReader := reader.(*schema.UnionField)
-			// If the reader is also a union, read into the first supported type
-			for readerIndex, r := range unionReader.Children() {
-				if t.IsReadableBy(r, make(map[schema.QualifiedName]interface{})) {
-					p.addSwitchCase(switchId, i, readerIndex)
-					p.addLiteral(vm.Enter, readerIndex)
-					err := p.compileType(t, r)
-					if err != nil {
-						return err
-					}
-					p.addLiteral(vm.Exit, vm.NoopField)
-					continue writer
-				}
-			}
-			p.addSwitchCase(switchId, i, -1)
-			typedErrId := p.addError(fmt.Sprintf("Reader schema has no field for type %v in union", t.Name()))
-			p.addLiteral(vm.Halt, typedErrId)
-		case t.IsReadableBy(reader, make(map[schema.QualifiedName]interface{})):
-			// If the reader is not a union but it can read this union field, support it
-			p.addSwitchCase(switchId, i, -1)
-			err := p.compileType(t, reader)
-			if err != nil {
-				return err
-			}
-		default:
-			p.addSwitchCase(switchId, i, -1)
-			typedErrId := p.addError(fmt.Sprintf("Reader schema has no field for type %v in union", t.Name()))
-			p.addLiteral(vm.Halt, typedErrId)
-		}
-	}
-	p.addSwitchEnd(switchId)
-	return nil
-}
-
-func isUnionField(t schema.AvroType) bool {
-	_, ok := t.(*schema.UnionField)
-	return ok
+func (m *method) append(instructions ...vm.Instruction) *method {
+	m.code = append(m.code, instructions...)
+	return m
 }
