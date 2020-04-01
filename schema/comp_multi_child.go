@@ -39,7 +39,7 @@ func (t *multiChildComponent) SerializerMethod() string {
 	panic("Complex, multi-child types must implement their own SerializerMethod")
 }
 
-func (t *multiChildComponent) IsReadableBy(other GenericType, visited map[string]bool) bool {
+func (t *multiChildComponent) IsReadableBy(other GenericType, visited VisitMap) bool {
 	if t.GoType() == other.GoType() {
 		return true
 	}

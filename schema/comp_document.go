@@ -16,10 +16,10 @@ type documentComponent struct {
 	doc string
 }
 
-func (t *documentComponent) Doc() string {
-	return t.doc
+func (comp *documentComponent) Doc() string {
+	return comp.doc
 }
 
-func (t *documentComponent) SetDoc(doc string) {
-	t.doc = doc
+func (comp *documentComponent) SetDoc(doc string) {
+	comp.doc = doc
 }

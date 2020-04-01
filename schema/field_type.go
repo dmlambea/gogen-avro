@@ -2,8 +2,8 @@ package schema
 
 import "strings"
 
-func NewField(name string, itemType GenericType) *FieldType {
-	t := &FieldType{}
+func NewField(name string, itemType GenericType, index int) *FieldType {
+	t := &FieldType{index: index}
 	t.setQName(QName{Name: name})
 	t.setItemType(itemType)
 	return t
@@ -19,6 +19,11 @@ type FieldType struct {
 	documentComponent
 	namespaceComponent
 	singleChildComponent
+	index int
+}
+
+func (t *FieldType) Index() int {
+	return t.index
 }
 
 func (t *FieldType) HasDefault() bool {
@@ -60,7 +65,7 @@ func (t *FieldType) NonOptionalIndex() int {
 	return t.Type().NonOptionalIndex()
 }
 
-func (t *FieldType) IsReadableBy(other GenericType, visited map[string]bool) bool {
+func (t *FieldType) IsReadableBy(other GenericType, visited VisitMap) bool {
 	return t.Type().IsReadableBy(other, visited)
 }
 

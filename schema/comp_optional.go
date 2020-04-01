@@ -18,22 +18,22 @@ var (
 	_ OptionalType = &optionalComponent{}
 )
 
-func (p *optionalComponent) IsOptional() bool {
-	return p.optIndex > 0
+func (comp *optionalComponent) IsOptional() bool {
+	return comp.optIndex > 0
 }
 
-func (p *optionalComponent) IsUnion() bool {
+func (comp *optionalComponent) IsUnion() bool {
 	return false
 }
 
-func (p *optionalComponent) SetOptionalIndex(idx int) {
-	p.optIndex = idx + 1
+func (comp *optionalComponent) SetOptionalIndex(idx int) {
+	comp.optIndex = idx + 1
 }
 
-func (p *optionalComponent) OptionalIndex() int {
-	return p.optIndex - 1
+func (comp *optionalComponent) OptionalIndex() int {
+	return comp.optIndex - 1
 }
 
-func (p *optionalComponent) NonOptionalIndex() int {
-	return 1 - (p.optIndex - 1)
+func (comp *optionalComponent) NonOptionalIndex() int {
+	return 1 - (comp.optIndex - 1)
 }

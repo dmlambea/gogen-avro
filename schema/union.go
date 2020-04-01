@@ -8,7 +8,7 @@ const (
 
 func NewUnionField(itemTypes []GenericType) *UnionType {
 	t := &UnionType{}
-	t.setFormatters(unionNameFormat, "UnionTypeLeches%s")
+	t.setFormatters(unionNameFormat, "")
 	t.setItemTypes(itemTypes)
 	return t
 }
@@ -34,7 +34,7 @@ func (t *UnionType) SerializerMethod() string {
 	return fmt.Sprintf("write%s", t.Name())
 }
 
-func (t *UnionType) IsReadableBy(other GenericType, visited map[string]bool) bool {
+func (t *UnionType) IsReadableBy(other GenericType, visited VisitMap) bool {
 	// Check the optional case, when the field is a null type
 	if other.IsOptional() {
 		return t.IsOptional()

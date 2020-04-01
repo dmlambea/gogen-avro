@@ -4,7 +4,6 @@ import "fmt"
 
 func NewRecordField(qname QName, itemTypes []GenericType) *RecordType {
 	t := &RecordType{}
-	t.setFormatters("RecNameLeches%s", "RecTypeLeches%s")
 	t.setQName(qname)
 	t.setItemTypes(itemTypes)
 	return t
@@ -16,12 +15,14 @@ var (
 	_ CompositeType  = &RecordType{}
 	_ DocumentedType = &RecordType{}
 	_ NamespacedType = &RecordType{}
+	_ SchemaType     = &RecordType{}
 )
 
 type RecordType struct {
 	namespaceComponent
 	documentComponent
 	multiChildComponent
+	schemaComponent
 }
 
 // Disambiguate Name method from ComplexType and NamespacedType
@@ -33,7 +34,7 @@ func (t *RecordType) SerializerMethod() string {
 	return fmt.Sprintf("write%s", t.Name())
 }
 
-func (t *RecordType) IsReadableBy(other GenericType, visited map[string]bool) bool {
+func (t *RecordType) IsReadableBy(other GenericType, visited VisitMap) bool {
 	// If there's a circular reference, don't evaluate every field on the second pass
 	if _, ok := visited[t.Name()]; ok {
 		return true
@@ -47,7 +48,7 @@ func (t *RecordType) IsReadableBy(other GenericType, visited map[string]bool) bo
 			if !ok {
 				panic(fmt.Sprintf("Unexpected non-field type %T in %s", child, otherRecord.Name()))
 			}
-			writerField := t.findFieldByNameOrAlias(readerField)
+			writerField := t.FindFieldByNameOrAlias(readerField)
 
 			// Two schemas are incompatible if the reader has a field with no default value that is not present in the writer schema
 			if writerField == nil && !readerField.HasDefault() {
@@ -65,7 +66,7 @@ func (t *RecordType) IsReadableBy(other GenericType, visited map[string]bool) bo
 	return t.multiChildComponent.IsReadableBy(other, visited)
 }
 
-func (t *RecordType) findFieldByNameOrAlias(sample *FieldType) *FieldType {
+func (t *RecordType) FindFieldByNameOrAlias(sample *FieldType) *FieldType {
 	for _, child := range t.Children() {
 		field, ok := child.(*FieldType)
 		if !ok {

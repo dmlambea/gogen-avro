@@ -30,7 +30,7 @@ func (t *ArrayType) SerializerMethod() string {
 	return fmt.Sprintf("write%s", t.Name())
 }
 
-func (t *ArrayType) IsReadableBy(other GenericType, visited map[string]bool) bool {
+func (t *ArrayType) IsReadableBy(other GenericType, visited VisitMap) bool {
 	// If both fields are optional, they are compatible
 	if t.IsOptional() && other.IsOptional() {
 		return true

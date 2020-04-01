@@ -83,7 +83,7 @@ func (r *Reference) SerializerMethod() string {
 	panic(fmt.Sprintf("This reference %T should have been resolved earlier", r))
 }
 
-func (r *Reference) IsReadableBy(other GenericType, visited map[string]bool) bool {
+func (r *Reference) IsReadableBy(other GenericType, visited VisitMap) bool {
 	panic(fmt.Sprintf("This reference %T should have been resolved earlier", r))
 }
 

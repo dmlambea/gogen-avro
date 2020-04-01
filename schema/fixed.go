@@ -6,6 +6,7 @@ func NewFixedField(qname QName, sizeBytes uint64) *FixedType {
 	t := &FixedType{}
 	t.setQName(qname)
 	t.goType = fmt.Sprintf("[%d]byte", sizeBytes)
+	t.sizeBytes = sizeBytes
 	return t
 }
 
@@ -18,7 +19,12 @@ var (
 type FixedType struct {
 	namespaceComponent
 	optionalComponent
-	goType string
+	goType    string
+	sizeBytes uint64
+}
+
+func (t *FixedType) SizeBytes() uint64 {
+	return t.sizeBytes
 }
 
 func (t *FixedType) GoType() string {
@@ -29,7 +35,7 @@ func (t *FixedType) SerializerMethod() string {
 	return fmt.Sprintf("write%s", t.Name())
 }
 
-func (t *FixedType) IsReadableBy(other GenericType, visited map[string]bool) bool {
+func (t *FixedType) IsReadableBy(other GenericType, visited VisitMap) bool {
 	f, ok := other.(*FixedType)
 	if ok {
 		ok = (f.goType == t.goType) && (f.Name() == t.Name())

@@ -18,22 +18,22 @@ type namespaceComponent struct {
 	aliases []QName
 }
 
-func (t *namespaceComponent) Name() string {
-	return DefaultNamer.ToPublicName(t.qname.String())
+func (comp *namespaceComponent) Name() string {
+	return DefaultNamer.ToPublicName(comp.qname.String())
 }
 
-func (t *namespaceComponent) setQName(qname QName) {
-	t.qname = qname
+func (comp *namespaceComponent) setQName(qname QName) {
+	comp.qname = qname
 }
 
-func (t *namespaceComponent) QName() QName {
-	return t.qname
+func (comp *namespaceComponent) QName() QName {
+	return comp.qname
 }
 
-func (t *namespaceComponent) Aliases() []QName {
-	return t.aliases
+func (comp *namespaceComponent) Aliases() []QName {
+	return comp.aliases
 }
 
-func (t *namespaceComponent) SetAliases(aliases []QName) {
-	t.aliases = aliases
+func (comp *namespaceComponent) SetAliases(aliases []QName) {
+	comp.aliases = aliases
 }

@@ -40,7 +40,7 @@ func (t *EnumType) Symbols() []string {
 	return t.symbols
 }
 
-func (t *EnumType) IsReadableBy(other GenericType, visited map[string]bool) bool {
+func (t *EnumType) IsReadableBy(other GenericType, visited VisitMap) bool {
 	f, ok := other.(*EnumType)
 	if ok {
 		ok = (f.Name() == t.Name())

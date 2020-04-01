@@ -51,23 +51,23 @@ var (
 	_ OptionalType = &primitiveType{}
 )
 
-func (p *primitiveType) Name() string {
+func (p primitiveType) Name() string {
 	return p.name
 }
 
-func (p *primitiveType) GoType() string {
+func (p primitiveType) GoType() string {
 	return p.goType
 }
 
-func (p *primitiveType) setGoType(goType string) {
+func (p primitiveType) setGoType(goType string) {
 	p.goType = goType
 }
 
-func (p *primitiveType) SerializerMethod() string {
+func (p primitiveType) SerializerMethod() string {
 	return "vm.WritePrimitive"
 }
 
-func (p *primitiveType) IsReadableBy(other GenericType, visited map[string]bool) bool {
+func (p primitiveType) IsReadableBy(other GenericType, visited VisitMap) bool {
 	// If both fields are optional, they are compatible
 	if p.IsOptional() && other.IsOptional() {
 		return true
