@@ -11,7 +11,7 @@ import (
 
 const (
 	// Special Go type for null types
-	nullGoType = "-"
+	nullGoType = ""
 )
 
 // Namespace holds an array of schema.ComplexType, used to create the .go source files from them.
@@ -30,7 +30,7 @@ func NewNamespace(shortUnions bool) *Namespace {
 
 // ParseSchema accepts an Avro schema as a JSON string and parses it. An error is returned if any occurs.
 // The Avro type defined at the top level and all the type definitions beneath it will also be added to this Namespace.
-func (n *Namespace) ParseSchema(schemaJson []byte) (err error) {
+func (n *Namespace) ParseSchema(schemaJson []byte) (topLevel schema.GenericType, err error) {
 	var schema interface{}
 	if err = json.Unmarshal(schemaJson, &schema); err != nil {
 		return
@@ -38,8 +38,7 @@ func (n *Namespace) ParseSchema(schemaJson []byte) (err error) {
 
 	// Intentionally the name starts with an invalid character, so the identifier cannot collide
 	// with any user-defined one.
-	_, err = n.decodeType("-", "", schema)
-	return
+	return n.decodeType("-", "", schema)
 }
 
 // registerType creates a reference wrapping a qnamed type in the registry. To avoid post-processing,
@@ -232,7 +231,7 @@ func (n *Namespace) decodeRecord(namespace string, schemaMap map[string]interfac
 			return nil, err
 		}
 
-		decodedField := schema.NewField(fieldName, fieldType)
+		decodedField := schema.NewField(fieldName, fieldType, i)
 
 		// Record fields have no namespaces
 		if err = parseAliases(fieldSchemaMap, decodedField, ""); err != nil {
@@ -264,6 +263,8 @@ func (n *Namespace) decodeRecord(namespace string, schemaMap map[string]interfac
 		return nil, err
 	}
 
+	recordField.SetSchema(schemaMap)
+
 	return recordField, nil
 }
 
@@ -281,7 +282,7 @@ func (n *Namespace) decodeUnion(name, namespace string, schemaList []interface{}
 			nullFieldFoundAt = i
 		}
 
-		decodedFields[i] = schema.NewField(fieldType.Name(), fieldType)
+		decodedFields[i] = schema.NewField(fieldType.Name(), fieldType, i)
 	}
 
 	if len(decodedFields) != 2 || nullFieldFoundAt < 0 {
@@ -296,30 +297,11 @@ func (n *Namespace) decodeUnion(name, namespace string, schemaList []interface{}
 }
 
 // getTypeByName returns the type associated with a type name, mostly primitive types, but also qnamed, registered types.
-func (n *Namespace) getTypeByName(typeStr, namespace string) schema.GenericType {
-	var name, goType string
-	switch typeStr {
-	case "int":
-		name, goType = "Int", "int32"
-	case "long":
-		name, goType = "Long", "int64"
-	case "float":
-		name, goType = "Float", "float32"
-	case "double":
-		name, goType = "Double", "float64"
-	case "boolean":
-		name, goType = "Bool", "bool"
-	case "bytes":
-		name, goType = "Bytes", "[]byte"
-	case "string":
-		name, goType = "String", "string"
-	case "null":
-		name, goType = "Null", nullGoType
+func (n *Namespace) getTypeByName(typeStr, namespace string) (t schema.GenericType) {
+	if t = schema.NewPrimitiveType(typeStr); t != nil {
+		return
 	}
-
-	if name != "" {
-		return schema.NewPrimitiveType(name, goType)
-	}
+	// Non-primitive type: create a reference
 	qname := fixQName(schema.QName{Name: typeStr, Namespace: namespace})
 	return n.registerType(qname, nil)
 }
