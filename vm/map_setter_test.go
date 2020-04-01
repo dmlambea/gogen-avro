@@ -2,7 +2,6 @@ package vm
 
 import (
 	"bytes"
-	"fmt"
 	"testing"
 
 	"github.com/actgardner/gogen-avro/vm/generated"
@@ -40,16 +39,16 @@ var (
 	complexMapReaderByteCode = []byte{
 		byte(OpMov), byte(TypeInt),
 		byte(OpMovEq), 0, byte(TypeInt),
-		byte(OpLoop), 3,
+		byte(OpBlock), 3,
 		byte(OpMov), byte(TypeString), // Outer Map key
-		byte(OpCall), byte(2), // Call NestedMapRecord
-		byte(OpEndLoop),
-		byte(OpHalt),
+		byte(OpRecord), byte(2), // Call NestedMapRecord
+		byte(OpEndBlock),
+		byte(OpRet),
 		byte(OpMov), byte(TypeFloat), // NestedMapRecord
-		byte(OpLoop), 3,
+		byte(OpBlock), 3,
 		byte(OpMov), byte(TypeString), // Inner Map key
 		byte(OpMov), byte(TypeInt), // Inner map values
-		byte(OpEndLoop),
+		byte(OpEndBlock),
 		byte(OpRet),
 	}
 
@@ -69,16 +68,16 @@ var (
 
 	simpleMapReaderByteCode = []byte{
 		byte(OpMov), byte(TypeInt),
-		byte(OpLoop), 3,
+		byte(OpBlock), 3,
 		byte(OpMov), byte(TypeString), // Outer Map key
 		byte(OpMov), byte(TypeString), // Outer Map value
-		byte(OpEndLoop),
+		byte(OpEndBlock),
 		byte(OpHalt),
 	}
 )
 
 func TestSimpleMapSetter(t *testing.T) {
-	p, err := NewProgram(simpleMapReaderByteCode)
+	p, err := NewProgramFromBytecode(simpleMapReaderByteCode)
 	assert.Nil(t, err)
 
 	var obj generated.SimpleMapTestRecord
@@ -88,11 +87,9 @@ func TestSimpleMapSetter(t *testing.T) {
 	}
 
 	engine := NewEngine(p, objSetter)
-	err = engine.Run(bytes.NewBuffer(simpleMapInputData))
-	if err != nil {
-		t.Fatalf("Program failed:\n%s\n\nFailure: %v", p.String(), err)
+	if err = engine.Run(bytes.NewBuffer(simpleMapInputData)); err != nil {
+		t.Fatalf("Program failed: %v", err)
 	}
-
 	t.Logf("Result: %+v\n", obj)
 
 	assert.Equal(t, int32(42), obj.AInt)
@@ -112,7 +109,7 @@ func TestSimpleMapSetter(t *testing.T) {
 }
 
 func TestMapSetter(t *testing.T) {
-	p, err := NewProgram(complexMapReaderByteCode)
+	p, err := NewProgramFromBytecode(complexMapReaderByteCode)
 	assert.Nil(t, err)
 
 	var obj generated.SetterMapTestRecord
@@ -122,11 +119,10 @@ func TestMapSetter(t *testing.T) {
 	}
 
 	engine := NewEngine(p, objSetter)
-	err = engine.Run(bytes.NewBuffer(complexMapInputData))
-	fmt.Printf("Obj:\t%+v\n", obj)
-	if err != nil {
-		t.Fatalf("Program failed:\n%s\n\nFailure: %v", p.String(), err)
+	if err = engine.Run(bytes.NewBuffer(complexMapInputData)); err != nil {
+		t.Fatalf("Program failed: %v", err)
 	}
+	t.Logf("Result: %+v\n", obj)
 
 	assert.Equal(t, int32(42), obj.AInt)
 
@@ -157,7 +153,7 @@ var mainErr error
 func BenchmarkMapSetter(b *testing.B) {
 	var err error
 	for n := 0; n < b.N; n++ {
-		p, _ := NewProgram(complexMapReaderByteCode)
+		p, _ := NewProgramFromBytecode(complexMapReaderByteCode)
 
 		var obj generated.SetterMapTestRecord
 		objSetter, _ := setters.NewSetterFor(&obj)

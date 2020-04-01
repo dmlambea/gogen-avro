@@ -13,40 +13,40 @@ func TestProgram(t *testing.T) {
 		Halt(),
 		Load(),
 		Skip(),
-		EndLoop(),
+		EndBlock(),
 		Ret(),
 
 		// 2-byte instructions
 		Mov(TypeInt),
 		Jmp(5),
-		Call(-4),
+		Record(-4),
 		Discard(TypeString),
-		Loop(6),
+		Block(6),
 
 		// 3-byte instructions
 		MovEq(1, TypeInt),
 		JmpEq(1, 2),
-		CallEq(1, -4),
+		RecordEq(1, -4),
 		DiscardBlock(-10),
+		DiscardRecord(-10),
 		DiscardEq(1, TypeString),
-		LoopEq(1, 1),
+		BlockEq(1, 1),
 
 		// 4-byte instructions
 		DiscardEqBlock(1, -8),
+		DiscardEqRecord(1, -8),
 
 		// n-byte instructions
 		Sort([]int{3, 2, 1, 0}),
 	}
 
-	p := Program{
-		instructions: instructionSet,
-	}
+	p := NewProgram(instructionSet)
 	var buf bytes.Buffer
 	_, err := p.WriteTo(&buf)
 	require.Nil(t, err)
 	goldenEquals(t, "testProgram", buf.Bytes())
 
-	p, err = NewProgram(buf.Bytes())
+	p, err = NewProgramFromBytecode(buf.Bytes())
 	require.Nil(t, err)
 	assert.EqualValues(t, instructionSet, p.instructions)
 }

@@ -99,6 +99,8 @@ func NewSetterFor(object interface{}) (Setter, error) {
 		return newStructSetter(elem.Addr().Interface())
 	case reflect.Map:
 		return newMapSetter(object, elem.Type()), nil
+	case reflect.Slice:
+		return newSliceSetter(object, elem.Type()), nil
 	}
 	return nil, ErrTypeNotSupported
 }

@@ -6,8 +6,13 @@ import (
 	"strings"
 )
 
-// NewProgram compiles bytecode onto a runnable program
-func NewProgram(byteCode []byte) (Program, error) {
+// NewProgram creates a runnable program from the given instruction list
+func NewProgram(instructions []Instruction) Program {
+	return Program{instructions: instructions}
+}
+
+// NewProgramFromBytecode compiles bytecode onto a runnable program
+func NewProgramFromBytecode(byteCode []byte) (Program, error) {
 	p := Program{}
 	for i, pos := 0, 0; i < len(byteCode); {
 		inst := decodeInstruction(byteCode[i:])

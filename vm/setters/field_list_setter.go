@@ -210,7 +210,7 @@ func createPointerToStructReflectValueSetter(elem reflect.Value) (inner Setter, 
 	switch elem.Type().Kind() {
 	case reflect.Ptr:
 		// Let it go further
-	case reflect.Map, reflect.Struct:
+	case reflect.Struct, reflect.Map, reflect.Slice:
 		return NewSetterFor(elem.Addr().Interface())
 	default:
 		return nil, ErrNonPointer

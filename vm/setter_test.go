@@ -46,16 +46,16 @@ var (
 		byte(OpMov), byte(TypeInt),
 		byte(OpMovEq), 0, byte(TypeInt),
 		byte(OpMovEq), 0, byte(TypeInt),
-		byte(OpCall), 2,
-		byte(OpCallEq), 1, 4,
-		byte(OpHalt),
+		byte(OpRecord), 2,
+		byte(OpRecordEq), 1, 4,
+		byte(OpRet),
 		// Node reader
 		byte(OpMov), byte(TypeString),
-		byte(OpCallEq), 1, 1,
+		byte(OpRecordEq), 1, 1,
 		byte(OpRet),
 		// Address reader
 		byte(OpMov), byte(TypeInt),
-		byte(OpCallEq), 1, -2 & 0xff,
+		byte(OpRecordEq), 1, -2 & 0xff,
 		byte(OpRet),
 	}
 
@@ -75,25 +75,25 @@ var (
 
 	reorderedReaderByteCode = []byte{
 		byte(OpSort), 2, 3, 0,
-		byte(OpCall), 5,
+		byte(OpRecord), 5,
 		byte(OpMov), byte(TypeInt),
 		byte(OpSkip),
 		byte(OpSkip),
 		byte(OpSkip),
-		byte(OpHalt),
+		byte(OpRet),
 		// Node reader
 		byte(OpMov), byte(TypeString),
-		byte(OpCallEq), 1, 1,
+		byte(OpRecordEq), 1, 1,
 		byte(OpRet),
 		// Address reader
 		byte(OpMov), byte(TypeInt),
-		byte(OpCallEq), 1, -2 & 0xff,
+		byte(OpRecordEq), 1, -2 & 0xff,
 		byte(OpRet),
 	}
 )
 
 func TestSetter(t *testing.T) {
-	p, err := NewProgram(readerByteCode)
+	p, err := NewProgramFromBytecode(readerByteCode)
 	assert.Nil(t, err)
 
 	var obj generated.SetterTestRecord
@@ -103,10 +103,10 @@ func TestSetter(t *testing.T) {
 	}
 
 	engine := NewEngine(p, objSetter)
-	err = engine.Run(bytes.NewBuffer(inputData))
-	if err != nil {
-		t.Fatalf("Program failed:\n%s\n\nFailure: %v", p.String(), err)
+	if err = engine.Run(bytes.NewBuffer(inputData)); err != nil {
+		t.Fatalf("Program failed: %v", err)
 	}
+	t.Logf("Result: %+v\n", obj)
 
 	assert.Equal(t, int32(42), obj.AInt)
 	require.NotNil(t, obj.OptInt)
@@ -133,7 +133,7 @@ func TestSetter(t *testing.T) {
 }
 
 func TestReorderedSetter(t *testing.T) {
-	p, err := NewProgram(reorderedReaderByteCode)
+	p, err := NewProgramFromBytecode(reorderedReaderByteCode)
 	assert.Nil(t, err)
 
 	var obj generated.SetterTestRecord
@@ -143,10 +143,10 @@ func TestReorderedSetter(t *testing.T) {
 	}
 
 	engine := NewEngine(p, objSetter)
-	err = engine.Run(bytes.NewBuffer(reorderedInputData))
-	if err != nil {
-		t.Fatalf("Program failed:\n%s\n\nFailure: %v", p.String(), err)
+	if err = engine.Run(bytes.NewBuffer(reorderedInputData)); err != nil {
+		t.Fatalf("Program failed: %v", err)
 	}
+	t.Logf("Result: %+v\n", obj)
 
 	assert.Equal(t, int32(42), obj.AInt)
 	assert.Nil(t, obj.OptInt)

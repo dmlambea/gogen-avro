@@ -2,7 +2,6 @@ package vm
 
 import (
 	"bytes"
-	"fmt"
 	"testing"
 
 	"github.com/actgardner/gogen-avro/vm/generated"
@@ -23,12 +22,12 @@ var (
 		byte(OpMov), byte(TypeInt),
 		byte(OpMov), byte(TypeInt),
 		byte(OpMovEq), 1, byte(TypeInt),
-		byte(OpHalt),
+		byte(OpRet),
 	}
 )
 
 func TestEnumSetter(t *testing.T) {
-	p, err := NewProgram(enumReaderByteCode)
+	p, err := NewProgramFromBytecode(enumReaderByteCode)
 	assert.Nil(t, err)
 
 	var obj generated.SetterEnumRecord
@@ -38,14 +37,13 @@ func TestEnumSetter(t *testing.T) {
 	}
 
 	engine := NewEngine(p, objSetter)
-	err = engine.Run(bytes.NewBuffer(enumInputData))
-	if err != nil {
-		t.Fatalf("Program failed:\n%s\n\nFailure: %v", p.String(), err)
+	if err = engine.Run(bytes.NewBuffer(enumInputData)); err != nil {
+		t.Fatalf("Program failed: %v", err)
 	}
+	t.Logf("Result: %+v\n", obj)
 
 	assert.Equal(t, int32(42), obj.AInt)
 	assert.Equal(t, generated.EnumOne, obj.AEnum)
 	require.NotNil(t, obj.OptEnum)
 	assert.Equal(t, generated.EnumTwo, *obj.OptEnum)
-	fmt.Printf("Result: %+v\n", obj)
 }

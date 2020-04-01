@@ -41,20 +41,36 @@ func (e engine) doRun(depth, pc int, setter setters.Setter) (err error) {
 		}
 	}
 
-	callFn := func(s setters.Setter) {
+	recordFn := func() {
 		var innerSetter setters.Setter
-		if innerSetter, err = s.GetInner(); err != nil {
+		if innerSetter, err = setter.GetInner(); err != nil {
 			return
 		}
 		err = e.doRun(depth+1, pc+inst.pos+1, innerSetter)
 	}
 
-	loopFn := func(s setters.Setter) {
+	discardFn := func() {
+		_, err = readInput(inst.tp, e.input)
+	}
+
+	discardBlockFn := func() {
+		if err = e.runBlock(depth+1, pc+1, setters.NewSkipperSetter()); err == nil {
+			pc += inst.pos
+		}
+	}
+
+	discardRecordFn := func() {
+		err = e.doRun(depth+1, pc+inst.pos+1, setters.NewSkipperSetter())
+	}
+
+	blockFn := func() {
 		var innerSetter setters.Setter
-		if innerSetter, err = s.GetInner(); err != nil {
+		if innerSetter, err = setter.GetInner(); err != nil {
 			return
 		}
-		err = e.runLoop(depth+1, pc+1, innerSetter)
+		if err = e.runBlock(depth+1, pc+1, innerSetter); err == nil {
+			pc += inst.pos
+		}
 	}
 
 	eqFn := func(fn func()) {
@@ -82,27 +98,18 @@ func (e engine) doRun(depth, pc int, setter setters.Setter) (err error) {
 			movFn()
 		case OpMovEq:
 			eqFn(movFn)
-		case OpDiscard:
-			if inst.tp != TypeBlock {
-				_, err = readInput(inst.tp, e.input)
-			} else {
-				err = e.doRun(depth+1, inst.pos, setters.NewSkipperSetter())
-			}
 		case OpDiscardEq:
-			var fn func()
-			if inst.tp != TypeBlock {
-				fn = func() {
-					_, err = readInput(inst.tp, e.input)
-				}
-			} else {
-				fn = func() {
-					err = e.doRun(depth+1, inst.pos, setters.NewSkipperSetter())
-				}
-			}
-			if loadFn(); err == nil {
-				if acc == int64(inst.val.(int32)) {
-					fn()
-				}
+			// No matter the value of acc, the reader's field must be discarded
+			loadFn()
+			fallthrough
+		case OpDiscard:
+			switch {
+			case inst.IsJumpType() == false:
+				discardFn()
+			case inst.IsBlockType():
+				discardBlockFn()
+			default:
+				discardRecordFn()
 			}
 		case OpSkip:
 			err = setter.Execute(setters.SkipField, nil)
@@ -112,24 +119,15 @@ func (e engine) doRun(depth, pc int, setter setters.Setter) (err error) {
 			if acc == int64(inst.val.(int)) {
 				pc += inst.pos
 			}
-		case OpCall:
-			callFn(setter)
-		case OpCallEq:
-			eqFn(func() {
-				callFn(setter)
-			})
-		case OpLoop:
-			loopFn(setter)
-			pc += inst.pos
-		case OpLoopEq:
-			eqFn(func() {
-				loopFn(setter)
-			})
-			pc += inst.pos
-		case OpRet, OpEndLoop:
-			if depth == 0 {
-				err = fmt.Errorf("can't %s from main flow at %d", inst.op, pc)
-			}
+		case OpRecord:
+			recordFn()
+		case OpRecordEq:
+			eqFn(recordFn)
+		case OpBlock:
+			blockFn()
+		case OpBlockEq:
+			eqFn(blockFn)
+		case OpRet, OpEndBlock:
 			return
 		}
 		// General error occurred in executing the instruction
@@ -141,8 +139,8 @@ func (e engine) doRun(depth, pc int, setter setters.Setter) (err error) {
 	return
 }
 
-// runLoop is a convenience method to allow running over block-serialized types (maps, arrays)
-func (e engine) runLoop(depth, pc int, setter setters.Setter) (err error) {
+// runBlock is a convenience method to allow running over block-serialized types (maps, arrays)
+func (e engine) runBlock(depth, pc int, setter setters.Setter) (err error) {
 	for {
 		// Load block length. If no more blocks (lenght==0) or an error occurs, go back
 		count, err := readLong(e.input)

@@ -45,8 +45,16 @@ func Discard(t Type) Instruction {
 	return Instruction{op: OpDiscard, tp: t}
 }
 
-// DiscardBlock xx is a special type of discard so that a full record of data can be
+// DiscardRecord xx is a special type of discard so that a full record of data can be
 // discarded. Since the size of the data to be discarded cannot be known in advance,
+// the VM needs to consume it completely. The argument xx is the relative address of
+// the code that is used to consume the input.
+func DiscardRecord(relPos int) Instruction {
+	return Instruction{op: OpDiscard, tp: TypeRecord, pos: relPos}
+}
+
+// DiscardBlock xx is a special type of discard so that a full stream of data blocks can be
+// discarded. Since the size of the data to be discarded cannot be always known in advance,
 // the VM needs to consume it completely. The argument xx is the relative address of
 // the code that is used to consume the input.
 func DiscardBlock(relPos int) Instruction {
@@ -59,10 +67,18 @@ func DiscardEq(val int64, t Type) Instruction {
 	return Instruction{op: OpDiscardEq, tp: t, val: val}
 }
 
-// DiscardEqBlock xx is a special type of discard so that a full record of data can be
-// discarded. Since the size of the data to be discarded cannot be known in advance,
-// the VM needs to consume it completely. The argument xx is the relative address of
-// the routine that is used to consume the input.
+// DiscardEqRecord val xx is a special type of discard so that a full record of data can be
+// discarded, if the value of the acc equals val. Since the size of the data to be discarded
+// cannot be known in advance, the VM needs to consume it completely. The argument xx is the
+// relative address of the routine that is used to consume the input.
+func DiscardEqRecord(val int64, relPos int) Instruction {
+	return Instruction{op: OpDiscardEq, tp: TypeRecord, pos: relPos, val: val}
+}
+
+// DiscardEqBlock val xx is a special type of discard so that a full stream of data blocks can be
+// discarded, if the value of the acc equals val. Since the size of the data to be discarded
+// cannot be always known in advance, the VM needs to consume it completely. The argument xx
+// is the relative address of the code that is used to consume the input.
 func DiscardEqBlock(val int64, relPos int) Instruction {
 	return Instruction{op: OpDiscardEq, tp: TypeBlock, pos: relPos, val: val}
 }
@@ -83,16 +99,16 @@ func JmpEq(val int64, relPos int) Instruction {
 	return Instruction{op: OpJmpEq, pos: relPos, val: val}
 }
 
-// Call xx reads a record by calling the routine at relative position xx.
-func Call(relPos int) Instruction {
-	return Instruction{op: OpCall, pos: relPos}
+// Record xx reads a record by calling the routine at relative position xx.
+func Record(relPos int) Instruction {
+	return Instruction{op: OpRecord, pos: relPos}
 }
 
-// CallEq vv xx reads a record by calling the routine at relative position xx, if the
+// RecordEq vv xx reads a record by calling the routine at relative position xx, if the
 // first int64 value of input matches vv. The int64 value is consumed this way and
 // therefore discarded.
-func CallEq(val int64, relPos int) Instruction {
-	return Instruction{op: OpCallEq, pos: relPos, val: val}
+func RecordEq(val int64, relPos int) Instruction {
+	return Instruction{op: OpRecordEq, pos: relPos, val: val}
 }
 
 // Ret returns from a record reading routine.
@@ -100,46 +116,85 @@ func Ret() Instruction {
 	return Instruction{op: OpRet}
 }
 
-// Loop xx reads as many blocks from input as it encounters, then jumps to the
+// Block xx reads as many blocks from input as it encounters, then jumps to the
 // relative position xx.
-func Loop(relPos int) Instruction {
-	return Instruction{op: OpLoop, pos: relPos}
+func Block(relPos int) Instruction {
+	return Instruction{op: OpBlock, pos: relPos}
 }
 
-// LoopEq vv xx reads as many blocks from input as it encounters, then jumps to the
+// BlockEq vv xx reads as many blocks from input as it encounters, then jumps to the
 // relative position xx, if the first int64 value of input matches vv. The int64 value
 // is consumed this way and therefore discarded.
-func LoopEq(val int64, relPos int) Instruction {
-	return Instruction{op: OpLoopEq, pos: relPos, val: val}
+func BlockEq(val int64, relPos int) Instruction {
+	return Instruction{op: OpBlockEq, pos: relPos, val: val}
 }
 
-// EndLoop matches its corresponding Loop to signal the end of the block fields.
-func EndLoop() Instruction {
-	return Instruction{op: OpEndLoop}
+// EndBlock matches its corresponding Block to signal the end of the block fields.
+func EndBlock() Instruction {
+	return Instruction{op: OpEndBlock}
+}
+
+// Opcode returns the opcode for this instruction
+func (i Instruction) Opcode() Opcode {
+	return i.op
+}
+
+// SetPos sets the relative position of this jump-type instruction.
+// This will panic if this is not a jump-type instruction.
+func (i *Instruction) SetPos(pos int) {
+	if !i.IsJumpType() {
+		panic(fmt.Sprintf("%s is not a jump-type instruction", i))
+	}
+	i.pos = pos
+}
+
+// IsJumpType returns true if this instruction can make the VM to move its program counter
+// to a relative position counting after the next instruction in the program.
+func (i Instruction) IsJumpType() bool {
+	switch i.op {
+	case OpJmp, OpRecord, OpBlock, OpJmpEq, OpRecordEq, OpBlockEq:
+		return true
+	case OpDiscard, OpDiscardEq:
+		return i.tp == TypeBlock || i.tp == TypeRecord
+	default:
+		return false
+	}
+}
+
+// IsBlockType returns true if this instruction can make the VM to consume/discard block-encoded data.
+func (i Instruction) IsBlockType() bool {
+	switch i.op {
+	case OpBlock, OpBlockEq:
+		return true
+	case OpDiscard, OpDiscardEq:
+		return i.tp == TypeBlock
+	default:
+		return false
+	}
 }
 
 // String is the implementation of Stringer for this instruction.
 func (i Instruction) String() string {
 	switch i.op {
-	case OpError, OpHalt, OpLoad, OpSkip, OpRet, OpEndLoop:
+	case OpError, OpHalt, OpLoad, OpSkip, OpRet, OpEndBlock:
 		return i.op.String()
 
 	case OpMov, OpDiscard:
-		if i.op == OpDiscard && i.tp == TypeBlock {
+		if i.IsJumpType() {
 			return fmt.Sprintf("%s %s\t--> %d", i.op, i.tp, i.pos)
 		}
 		return fmt.Sprintf("%s %s", i.op, i.tp)
 
 	case OpMovEq, OpDiscardEq:
-		if i.op == OpDiscardEq && i.tp == TypeBlock {
+		if i.IsJumpType() {
 			return fmt.Sprintf("%s %d %s\t--> %d", i.op, i.val, i.tp, i.pos)
 		}
 		return fmt.Sprintf("%s %d %s", i.op, i.val, i.tp)
 
-	case OpJmp, OpCall, OpLoop:
+	case OpJmp, OpRecord, OpBlock:
 		return fmt.Sprintf("%s\t--> %d", i.op, i.pos)
 
-	case OpJmpEq, OpCallEq, OpLoopEq:
+	case OpJmpEq, OpRecordEq, OpBlockEq:
 		return fmt.Sprintf("%s %d\t--> %d", i.op, i.val, i.pos)
 
 	case OpSort:
@@ -153,19 +208,19 @@ func (i Instruction) String() string {
 // Size returns the serialized size of this instruction.
 func (i Instruction) Size() int {
 	switch i.op {
-	case OpError, OpHalt, OpLoad, OpSkip, OpRet, OpEndLoop:
+	case OpError, OpHalt, OpLoad, OpSkip, OpRet, OpEndBlock:
 		return 1
-	case OpMov, OpJmp, OpCall, OpLoop:
+	case OpMov, OpJmp, OpRecord, OpBlock:
 		return 2
 	case OpDiscard:
-		if i.tp != TypeBlock {
+		if !i.IsJumpType() {
 			return 2
 		}
 		return 3
-	case OpMovEq, OpJmpEq, OpCallEq, OpLoopEq:
+	case OpMovEq, OpJmpEq, OpRecordEq, OpBlockEq:
 		return 3
 	case OpDiscardEq:
-		if i.tp != TypeBlock {
+		if !i.IsJumpType() {
 			return 3
 		}
 		return 4
@@ -183,30 +238,30 @@ func (i Instruction) WriteTo(w io.Writer) (n int64, err error) {
 	buf[0] = byte(i.op)
 
 	switch i.op {
-	case OpError, OpHalt, OpLoad, OpSkip, OpRet, OpEndLoop:
+	case OpError, OpHalt, OpLoad, OpSkip, OpRet, OpEndBlock:
 
 	case OpMov:
 		buf[1] = byte(i.tp)
-	case OpJmp, OpCall, OpLoop:
+	case OpJmp, OpRecord, OpBlock:
 		buf[1] = byte(i.pos)
 
 	case OpDiscard:
 		buf[1] = byte(i.tp)
-		if i.tp == TypeBlock {
+		if i.IsJumpType() {
 			buf[2] = byte(i.pos)
 		}
 
 	case OpMovEq:
 		buf[1] = byte(i.val.(int64))
 		buf[2] = byte(i.tp)
-	case OpJmpEq, OpCallEq, OpLoopEq:
+	case OpJmpEq, OpRecordEq, OpBlockEq:
 		buf[1] = byte(i.val.(int64))
 		buf[2] = byte(i.pos)
 
 	case OpDiscardEq:
 		buf[1] = byte(i.val.(int64))
 		buf[2] = byte(i.tp)
-		if i.tp == TypeBlock {
+		if i.IsJumpType() {
 			buf[3] = byte(i.pos)
 		}
 
@@ -247,6 +302,8 @@ func decodeInstruction(input []byte) (inst Instruction) {
 		switch t {
 		case TypeBlock:
 			inst = DiscardBlock(relByteToInt(input[2]))
+		case TypeRecord:
+			inst = DiscardRecord(relByteToInt(input[2]))
 		default:
 			inst = Discard(t)
 		}
@@ -255,6 +312,8 @@ func decodeInstruction(input []byte) (inst Instruction) {
 		switch t {
 		case TypeBlock:
 			inst = DiscardEqBlock(int64(input[1]), relByteToInt(input[3]))
+		case TypeRecord:
+			inst = DiscardEqRecord(int64(input[1]), relByteToInt(input[3]))
 		default:
 			inst = DiscardEq(int64(input[1]), t)
 		}
@@ -264,18 +323,18 @@ func decodeInstruction(input []byte) (inst Instruction) {
 		inst = Jmp(relByteToInt(input[1]))
 	case OpJmpEq:
 		inst = JmpEq(int64(input[1]), relByteToInt(input[2]))
-	case OpCall:
-		inst = Call(relByteToInt(input[1]))
-	case OpCallEq:
-		inst = CallEq(int64(input[1]), relByteToInt(input[2]))
+	case OpRecord:
+		inst = Record(relByteToInt(input[1]))
+	case OpRecordEq:
+		inst = RecordEq(int64(input[1]), relByteToInt(input[2]))
 	case OpRet:
 		inst = Ret()
-	case OpLoop:
-		inst = Loop(relByteToInt(input[1]))
-	case OpLoopEq:
-		inst = LoopEq(int64(input[1]), relByteToInt(input[2]))
-	case OpEndLoop:
-		inst = EndLoop()
+	case OpBlock:
+		inst = Block(relByteToInt(input[1]))
+	case OpBlockEq:
+		inst = BlockEq(int64(input[1]), relByteToInt(input[2]))
+	case OpEndBlock:
+		inst = EndBlock()
 	default:
 		inst = Instruction{op: OpError}
 	}

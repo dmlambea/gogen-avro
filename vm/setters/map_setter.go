@@ -17,14 +17,11 @@ type mapSetter struct {
 	mapAddr      interface{}
 	mapType      reflect.Type
 	mapElem      reflect.Value
-	keyVal       *mapKeyVal
+	keyVal       mapKeyVal
 	keyValSetter Setter
 }
 
-var mapIdx int
-
 func newMapSetter(mapAddr interface{}, mapType reflect.Type) Setter {
-	mapIdx++
 	s := &mapSetter{mapAddr: mapAddr, mapType: mapType}
 	return s
 }
@@ -41,7 +38,6 @@ func (s *mapSetter) Init(arg interface{}) (err error) {
 
 // Execute should not be called for map setters. The inner setter should be
 // used instead.
-// TODO optimize the usage of maps by allowing direct calls to Execute
 func (s *mapSetter) Execute(op OperationType, value interface{}) (err error) {
 	return errors.New("shouldn't be called directly")
 }
@@ -58,28 +54,27 @@ func (s *mapSetter) GetInner() (inner Setter, err error) {
 	s.mapElem = reflect.MakeMap(s.mapType)
 	reflect.ValueOf(s.mapAddr).Elem().Set(s.mapElem)
 
-	s.keyVal = &mapKeyVal{
-		K: reflect.New(s.mapType.Key()),
-		V: reflect.New(s.mapType.Elem()),
-	}
+	s.keyVal.K = reflect.New(s.mapType.Key())
+	s.keyVal.V = reflect.New(s.mapType.Elem())
+
 	s.keyValSetter = NewSetterForFields([]interface{}{
 		s.keyVal.K.Elem().Addr().Interface(),
 		s.keyVal.V.Elem().Addr().Interface(),
 	})
 
 	s.keyValSetter.setExhaustCallback(func(_ Setter) {
-		receiveNotification(s)
+		s.callbackEvent()
 	})
 	return s.keyValSetter, err
 }
 
-func receiveNotification(m *mapSetter) {
-	if m.keyValSetter.IsExhausted() {
-		m.mapElem.SetMapIndex(m.keyVal.K.Elem(), m.keyVal.V.Elem())
-		m.entries--
-		if m.entries == 0 {
-			m.trigger(m)
+func (s *mapSetter) callbackEvent() {
+	if s.keyValSetter.IsExhausted() {
+		s.mapElem.SetMapIndex(s.keyVal.K.Elem(), s.keyVal.V.Elem())
+		s.entries--
+		if s.entries == 0 {
+			s.trigger(s)
 		}
-		m.keyValSetter.(resettable).reset()
+		s.keyValSetter.(resettable).reset()
 	}
 }
