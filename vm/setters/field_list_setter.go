@@ -101,12 +101,10 @@ func (s *fieldListSetter) Execute(op OperationType, value interface{}) (err erro
 	err = nil
 	if op == SetField {
 		fldValue := reflect.ValueOf(fld)
-		switch fldValue.Kind() {
-		case reflect.Ptr:
-			err = s.setPointerElem(fldValue.Elem(), value)
-		default:
-			err = ErrTypeNotSupported
+		if fldValue.Kind() != reflect.Ptr {
+			return ErrTypeNotSupported
 		}
+		err = s.setPointerElem(fldValue.Elem(), value)
 	}
 	if err == nil {
 		s.goNext()
