@@ -1,7 +1,11 @@
 package setters
 
+// TODO:
+//  - Remove error checks tor reduce overhead and implement panics, as the most common case is the setters to work as expected.
+
 import (
 	"errors"
+	"fmt"
 	"reflect"
 )
 
@@ -31,6 +35,22 @@ type Setter interface {
 // resettable is implemented by setters that can be reused
 type resettable interface {
 	reset() error
+}
+
+type unionHelper interface {
+	self() *BaseUnion
+	UnionTypes() []reflect.Type
+}
+
+// BaseUnion is the base type for all unions
+type BaseUnion struct {
+	Type  int64
+	Value interface{}
+}
+
+// Self-locator for BaseUnion
+func (u *BaseUnion) self() *BaseUnion {
+	return u
 }
 
 var (
@@ -96,13 +116,16 @@ func NewSetterFor(object interface{}) (Setter, error) {
 	elem := ptr.Elem()
 	switch elem.Kind() {
 	case reflect.Struct:
+		if _, ok := object.(unionHelper); ok {
+			return newUnionSetter(elem.Addr().Interface()), nil
+		}
 		return newStructSetter(elem.Addr().Interface())
 	case reflect.Map:
 		return newMapSetter(object, elem.Type()), nil
 	case reflect.Slice:
 		return newSliceSetter(object, elem.Type()), nil
 	}
-	return nil, ErrTypeNotSupported
+	return nil, fmt.Errorf("unsupported type %s", elem.Kind())
 }
 
 // isAlreadySetter returns the (already-Setter, true) value of object, or (invalid, false) otherwise.
@@ -131,20 +154,7 @@ func newStructSetter(object interface{}) (s Setter, err error) {
 		if !fld.CanAddr() || !fld.Addr().CanInterface() {
 			continue
 		}
-		iface := fld.Addr().Interface()
-		/*
-			switch fld.Kind() {
-			case reflect.Struct:
-				if iface, err = NewSetterFor(iface); err != nil {
-					return
-				}
-			case reflect.Map:
-				//iface = newMapSetter(iface, fld.Type())
-			default:
-				// As is
-			}
-		*/
-		setterFields = append(setterFields, iface)
+		setterFields = append(setterFields, fld.Addr().Interface())
 	}
 	return newFieldListSetter(setterFields), nil
 }
