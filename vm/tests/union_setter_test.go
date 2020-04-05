@@ -2,6 +2,7 @@ package tests
 
 import (
 	"bytes"
+	"fmt"
 	"testing"
 
 	"github.com/actgardner/gogen-avro/vm"
@@ -11,68 +12,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestUnionString(t *testing.T) {
-	var obj generated.UnionStringIntNode
+type unionStringIntNodeFixture struct {
+	input    []byte
+	expected generated.UnionStringIntNode
+}
 
-	objSetter, err := setters.NewSetterFor(&obj)
-	require.Nil(t, err)
-	require.NotNil(t, objSetter)
-
-	p := vm.NewProgram([]vm.Instruction{
-		vm.Mov(vm.TypeLong),
+var (
+	unionStringIntNodeReaderProgram = []vm.Instruction{
+		vm.Load(),
+		vm.JmpEq(0, 10),
+		vm.Mov(vm.TypeAcc),
+		vm.JmpEq(1, 3),
+		vm.JmpEq(2, 4),
+		vm.JmpEq(3, 5),
+		vm.Halt(),
 		vm.Mov(vm.TypeString),
-		vm.Ret(),
-	})
-
-	var buf bytes.Buffer
-	buf.WriteByte(2) // Union type 1
-	buf.WriteByte(6) // String len
-	buf.WriteString("Hi!")
-
-	engine := vm.NewEngine(p, objSetter)
-	err = engine.Run(&buf)
-	require.Nil(t, err)
-	t.Logf("Result: %+v\n", obj)
-
-	assert.Equal(t, generated.UnionStringIntNodeTypeString, obj.Type)
-	assert.Equal(t, "Hi!", obj.Value)
-}
-
-func TestUnionInt(t *testing.T) {
-	var obj generated.UnionStringIntNode
-
-	objSetter, err := setters.NewSetterFor(&obj)
-	require.Nil(t, err)
-	require.NotNil(t, objSetter)
-
-	p := vm.NewProgram([]vm.Instruction{
-		vm.Mov(vm.TypeLong),
+		vm.Jmp(3),
 		vm.Mov(vm.TypeInt),
-		vm.Ret(),
-	})
-
-	var buf bytes.Buffer
-	buf.WriteByte(4)  // Union type 2
-	buf.WriteByte(84) // Int 42
-
-	engine := vm.NewEngine(p, objSetter)
-	err = engine.Run(&buf)
-	require.Nil(t, err)
-	t.Logf("Result: %+v\n", obj)
-
-	assert.Equal(t, generated.UnionStringIntNodeTypeInt, obj.Type)
-	assert.Equal(t, int32(42), obj.Value)
-}
-
-func TestUnionNode(t *testing.T) {
-	var obj generated.UnionStringIntNode
-
-	objSetter, err := setters.NewSetterFor(&obj)
-	require.Nil(t, err)
-	require.NotNil(t, objSetter)
-
-	p := vm.NewProgram([]vm.Instruction{
-		vm.Mov(vm.TypeLong),
+		vm.Jmp(1),
 		vm.Record(1),
 		vm.Ret(),
 		vm.Mov(vm.TypeString),
@@ -81,24 +38,39 @@ func TestUnionNode(t *testing.T) {
 		vm.Mov(vm.TypeInt),
 		vm.RecordEq(1, -2),
 		vm.Ret(),
-	})
+	}
 
-	var buf bytes.Buffer
-	buf.WriteByte(6) // Union type 3
-	buf.WriteByte(6) // String length
-	buf.WriteString("Hi!")
-	buf.WriteByte(2)  // Opt address follows
-	buf.WriteByte(42) // Address ID 21
-	buf.WriteByte(0)  // Opt Next
+	unionStringIntNodeFixtures = []unionStringIntNodeFixture{
+		{input: []byte{0}, expected: generated.UnionStringIntNode{}},
+		{input: []byte{2, 8, 'T', 'e', 's', 't'}, expected: generated.UnionStringIntNode{setters.BaseUnion{Type: 1, Value: "Test"}}},
+		{input: []byte{4, 84}, expected: generated.UnionStringIntNode{setters.BaseUnion{Type: 2, Value: int32(42)}}},
+		{input: []byte{6, 12, 'N', 'o', 'd', 'e', '-', '1', 2, 2, 0}, expected: generated.UnionStringIntNode{
+			setters.BaseUnion{
+				3,
+				generated.Node{
+					Name: "Node-1",
+					Addr: &generated.Address{Id: 1},
+				},
+			}},
+		},
+	}
+)
 
-	engine := vm.NewEngine(p, objSetter)
-	err = engine.Run(&buf)
-	require.Nil(t, err)
-	t.Logf("Result: %+v\n", obj)
+func TestUnion(t *testing.T) {
+	p := vm.NewProgram(unionStringIntNodeReaderProgram)
 
-	assert.Equal(t, generated.UnionStringIntNodeTypeNode, obj.Type)
-	assert.Equal(t, "Hi!", obj.Value.(generated.Node).Name)
-	require.NotNil(t, obj.Value.(generated.Node).Addr)
-	assert.Equal(t, int32(21), obj.Value.(generated.Node).Addr.Id)
-	assert.Nil(t, obj.Value.(generated.Node).Addr.Next)
+	for i, f := range unionStringIntNodeFixtures {
+		var obj generated.UnionStringIntNode
+
+		objSetter, err := setters.NewSetterFor(&obj)
+		require.Nil(t, err)
+		require.NotNil(t, objSetter)
+
+		buf := bytes.NewBuffer(f.input)
+		engine := vm.NewEngine(p, objSetter)
+		err = engine.Run(buf)
+		require.Nil(t, err)
+
+		assert.Equal(t, f.expected, obj, fmt.Sprintf("Union %d fails", i))
+	}
 }
