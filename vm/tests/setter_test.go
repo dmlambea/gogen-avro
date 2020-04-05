@@ -1,9 +1,10 @@
-package vm
+package tests
 
 import (
 	"bytes"
 	"testing"
 
+	"github.com/actgardner/gogen-avro/vm"
 	"github.com/actgardner/gogen-avro/vm/generated"
 	"github.com/actgardner/gogen-avro/vm/setters"
 	"github.com/stretchr/testify/assert"
@@ -43,20 +44,20 @@ var (
 	}
 
 	readerByteCode = []byte{
-		byte(OpMov), byte(TypeInt),
-		byte(OpMovEq), 0, byte(TypeInt),
-		byte(OpMovEq), 0, byte(TypeInt),
-		byte(OpRecord), 2,
-		byte(OpRecordEq), 1, 4,
-		byte(OpRet),
+		byte(vm.OpMov), byte(vm.TypeInt),
+		byte(vm.OpMovEq), 0, byte(vm.TypeInt),
+		byte(vm.OpMovEq), 0, byte(vm.TypeInt),
+		byte(vm.OpRecord), 2,
+		byte(vm.OpRecordEq), 1, 4,
+		byte(vm.OpRet),
 		// Node reader
-		byte(OpMov), byte(TypeString),
-		byte(OpRecordEq), 1, 1,
-		byte(OpRet),
+		byte(vm.OpMov), byte(vm.TypeString),
+		byte(vm.OpRecordEq), 1, 1,
+		byte(vm.OpRet),
 		// Address reader
-		byte(OpMov), byte(TypeInt),
-		byte(OpRecordEq), 1, -2 & 0xff,
-		byte(OpRet),
+		byte(vm.OpMov), byte(vm.TypeInt),
+		byte(vm.OpRecordEq), 1, -2 & 0xff,
+		byte(vm.OpRet),
 	}
 
 	reorderedInputData = []byte{
@@ -74,26 +75,26 @@ var (
 	}
 
 	reorderedReaderByteCode = []byte{
-		byte(OpSort), 2, 3, 0,
-		byte(OpRecord), 5,
-		byte(OpMov), byte(TypeInt),
-		byte(OpSkip),
-		byte(OpSkip),
-		byte(OpSkip),
-		byte(OpRet),
+		byte(vm.OpSort), 2, 3, 0,
+		byte(vm.OpRecord), 5,
+		byte(vm.OpMov), byte(vm.TypeInt),
+		byte(vm.OpSkip),
+		byte(vm.OpSkip),
+		byte(vm.OpSkip),
+		byte(vm.OpRet),
 		// Node reader
-		byte(OpMov), byte(TypeString),
-		byte(OpRecordEq), 1, 1,
-		byte(OpRet),
+		byte(vm.OpMov), byte(vm.TypeString),
+		byte(vm.OpRecordEq), 1, 1,
+		byte(vm.OpRet),
 		// Address reader
-		byte(OpMov), byte(TypeInt),
-		byte(OpRecordEq), 1, -2 & 0xff,
-		byte(OpRet),
+		byte(vm.OpMov), byte(vm.TypeInt),
+		byte(vm.OpRecordEq), 1, -2 & 0xff,
+		byte(vm.OpRet),
 	}
 )
 
 func TestSetter(t *testing.T) {
-	p, err := NewProgramFromBytecode(readerByteCode)
+	p, err := vm.NewProgramFromBytecode(readerByteCode)
 	assert.Nil(t, err)
 
 	var obj generated.SetterTestRecord
@@ -102,7 +103,7 @@ func TestSetter(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	engine := NewEngine(p, objSetter)
+	engine := vm.NewEngine(p, objSetter)
 	if err = engine.Run(bytes.NewBuffer(inputData)); err != nil {
 		t.Fatalf("Program failed: %v", err)
 	}
@@ -133,7 +134,7 @@ func TestSetter(t *testing.T) {
 }
 
 func TestReorderedSetter(t *testing.T) {
-	p, err := NewProgramFromBytecode(reorderedReaderByteCode)
+	p, err := vm.NewProgramFromBytecode(reorderedReaderByteCode)
 	assert.Nil(t, err)
 
 	var obj generated.SetterTestRecord
@@ -142,7 +143,7 @@ func TestReorderedSetter(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	engine := NewEngine(p, objSetter)
+	engine := vm.NewEngine(p, objSetter)
 	if err = engine.Run(bytes.NewBuffer(reorderedInputData)); err != nil {
 		t.Fatalf("Program failed: %v", err)
 	}

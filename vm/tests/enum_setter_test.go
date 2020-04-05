@@ -1,9 +1,10 @@
-package vm
+package tests
 
 import (
 	"bytes"
 	"testing"
 
+	"github.com/actgardner/gogen-avro/vm"
 	"github.com/actgardner/gogen-avro/vm/generated"
 	"github.com/actgardner/gogen-avro/vm/setters"
 	"github.com/stretchr/testify/assert"
@@ -19,15 +20,15 @@ var (
 	}
 
 	enumReaderByteCode = []byte{
-		byte(OpMov), byte(TypeInt),
-		byte(OpMov), byte(TypeInt),
-		byte(OpMovEq), 1, byte(TypeInt),
-		byte(OpRet),
+		byte(vm.OpMov), byte(vm.TypeInt),
+		byte(vm.OpMov), byte(vm.TypeInt),
+		byte(vm.OpMovEq), 1, byte(vm.TypeInt),
+		byte(vm.OpRet),
 	}
 )
 
 func TestEnumSetter(t *testing.T) {
-	p, err := NewProgramFromBytecode(enumReaderByteCode)
+	p, err := vm.NewProgramFromBytecode(enumReaderByteCode)
 	assert.Nil(t, err)
 
 	var obj generated.SetterEnumRecord
@@ -36,7 +37,7 @@ func TestEnumSetter(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	engine := NewEngine(p, objSetter)
+	engine := vm.NewEngine(p, objSetter)
 	if err = engine.Run(bytes.NewBuffer(enumInputData)); err != nil {
 		t.Fatalf("Program failed: %v", err)
 	}

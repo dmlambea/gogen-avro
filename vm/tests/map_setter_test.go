@@ -1,9 +1,10 @@
-package vm
+package tests
 
 import (
 	"bytes"
 	"testing"
 
+	"github.com/actgardner/gogen-avro/vm"
 	"github.com/actgardner/gogen-avro/vm/generated"
 	"github.com/actgardner/gogen-avro/vm/setters"
 	"github.com/stretchr/testify/assert"
@@ -37,19 +38,19 @@ var (
 	}
 
 	complexMapReaderByteCode = []byte{
-		byte(OpMov), byte(TypeInt),
-		byte(OpMovEq), 0, byte(TypeInt),
-		byte(OpBlock), 3,
-		byte(OpMov), byte(TypeString), // Outer Map key
-		byte(OpRecord), byte(2), // Call NestedMapRecord
-		byte(OpEndBlock),
-		byte(OpRet),
-		byte(OpMov), byte(TypeFloat), // NestedMapRecord
-		byte(OpBlock), 3,
-		byte(OpMov), byte(TypeString), // Inner Map key
-		byte(OpMov), byte(TypeInt), // Inner map values
-		byte(OpEndBlock),
-		byte(OpRet),
+		byte(vm.OpMov), byte(vm.TypeInt),
+		byte(vm.OpMovEq), 0, byte(vm.TypeInt),
+		byte(vm.OpBlock), 3,
+		byte(vm.OpMov), byte(vm.TypeString), // Outer Map key
+		byte(vm.OpRecord), byte(2), // Call NestedMapRecord
+		byte(vm.OpEndBlock),
+		byte(vm.OpRet),
+		byte(vm.OpMov), byte(vm.TypeFloat), // NestedMapRecord
+		byte(vm.OpBlock), 3,
+		byte(vm.OpMov), byte(vm.TypeString), // Inner Map key
+		byte(vm.OpMov), byte(vm.TypeInt), // Inner map values
+		byte(vm.OpEndBlock),
+		byte(vm.OpRet),
 	}
 
 	simpleMapInputData = []byte{
@@ -67,17 +68,17 @@ var (
 	}
 
 	simpleMapReaderByteCode = []byte{
-		byte(OpMov), byte(TypeInt),
-		byte(OpBlock), 3,
-		byte(OpMov), byte(TypeString), // Outer Map key
-		byte(OpMov), byte(TypeString), // Outer Map value
-		byte(OpEndBlock),
-		byte(OpHalt),
+		byte(vm.OpMov), byte(vm.TypeInt),
+		byte(vm.OpBlock), 3,
+		byte(vm.OpMov), byte(vm.TypeString), // Outer Map key
+		byte(vm.OpMov), byte(vm.TypeString), // Outer Map value
+		byte(vm.OpEndBlock),
+		byte(vm.OpHalt),
 	}
 )
 
 func TestSimpleMapSetter(t *testing.T) {
-	p, err := NewProgramFromBytecode(simpleMapReaderByteCode)
+	p, err := vm.NewProgramFromBytecode(simpleMapReaderByteCode)
 	assert.Nil(t, err)
 
 	var obj generated.SimpleMapTestRecord
@@ -86,7 +87,7 @@ func TestSimpleMapSetter(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	engine := NewEngine(p, objSetter)
+	engine := vm.NewEngine(p, objSetter)
 	if err = engine.Run(bytes.NewBuffer(simpleMapInputData)); err != nil {
 		t.Fatalf("Program failed: %v", err)
 	}
@@ -109,7 +110,7 @@ func TestSimpleMapSetter(t *testing.T) {
 }
 
 func TestMapSetter(t *testing.T) {
-	p, err := NewProgramFromBytecode(complexMapReaderByteCode)
+	p, err := vm.NewProgramFromBytecode(complexMapReaderByteCode)
 	assert.Nil(t, err)
 
 	var obj generated.SetterMapTestRecord
@@ -118,7 +119,7 @@ func TestMapSetter(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	engine := NewEngine(p, objSetter)
+	engine := vm.NewEngine(p, objSetter)
 	if err = engine.Run(bytes.NewBuffer(complexMapInputData)); err != nil {
 		t.Fatalf("Program failed: %v", err)
 	}
@@ -153,12 +154,12 @@ var mainErr error
 func BenchmarkMapSetter(b *testing.B) {
 	var err error
 	for n := 0; n < b.N; n++ {
-		p, _ := NewProgramFromBytecode(complexMapReaderByteCode)
+		p, _ := vm.NewProgramFromBytecode(complexMapReaderByteCode)
 
 		var obj generated.SetterMapTestRecord
 		objSetter, _ := setters.NewSetterFor(&obj)
 
-		engine := NewEngine(p, objSetter)
+		engine := vm.NewEngine(p, objSetter)
 		err = engine.Run(bytes.NewBuffer(complexMapInputData))
 	}
 	mainErr = err

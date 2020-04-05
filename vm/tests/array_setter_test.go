@@ -1,4 +1,4 @@
-package vm
+package tests
 
 import (
 	"bytes"
@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/actgardner/gogen-avro/vm"
 	"github.com/actgardner/gogen-avro/vm/setters"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -33,15 +34,15 @@ func (c simpleArrayTestNode) validate() error {
 	return nil
 }
 
-func getProgram() Program {
-	return NewProgram([]Instruction{
-		Block(2),
-		Record(2),
-		EndBlock(),
-		Ret(),
-		Mov(TypeInt),
-		Mov(TypeString),
-		Ret(),
+func getProgram() vm.Program {
+	return vm.NewProgram([]vm.Instruction{
+		vm.Block(2),
+		vm.Record(2),
+		vm.EndBlock(),
+		vm.Ret(),
+		vm.Mov(vm.TypeInt),
+		vm.Mov(vm.TypeString),
+		vm.Ret(),
 	})
 }
 
@@ -81,7 +82,7 @@ func TestSimpleArrayRoundtrip(t *testing.T) {
 	objSetter, err := setters.NewSetterFor(&obj)
 	require.Nil(t, err)
 
-	engine := NewEngine(p, objSetter)
+	engine := vm.NewEngine(p, objSetter)
 	err = engine.Run(getInputDataFor(10, 3))
 	require.Nil(t, err)
 
@@ -105,7 +106,7 @@ func BenchmarkArraySetter(b *testing.B) {
 		var obj simpleArrayTestRecord
 		objSetter, _ := setters.NewSetterFor(&obj)
 
-		engine := NewEngine(p, objSetter)
+		engine := vm.NewEngine(p, objSetter)
 		err = engine.Run(getInputDataFor(10, 1))
 	}
 	mainErr = err
