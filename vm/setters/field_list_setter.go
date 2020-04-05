@@ -94,7 +94,7 @@ func (s *fieldListSetter) Execute(op OperationType, value interface{}) (err erro
 
 	// If there is a nested Setter, use it for this field. Nested triggers goNext when exhausted.
 	if inner, ok := fld.(Setter); ok {
-		return s.executeNested(inner, op, value, fld)
+		return s.executeNested(op, value, inner)
 	}
 
 	// Only SetField makes sense to execute. SkipField always succeeds.
@@ -116,7 +116,7 @@ func (s *fieldListSetter) Execute(op OperationType, value interface{}) (err erro
 
 // executeNested tries to match current field as Setter/pointer-to-Setter, then executes
 // the operation in it. If not a Setter, ErrNotSetter is returned.
-func (s *fieldListSetter) executeNested(inner Setter, op OperationType, value, field interface{}) (err error) {
+func (s *fieldListSetter) executeNested(op OperationType, value interface{}, inner Setter) (err error) {
 	if !inner.hasExhaustCallback() {
 		inner.setExhaustCallback(func(_ Setter) {
 			s.goNext()
@@ -180,7 +180,7 @@ func (s *fieldListSetter) setPointerElem(elem reflect.Value, value interface{}) 
 	case nil:
 		// Make setter final
 		s.fields[s.curFld] = innerSetter
-		return s.executeNested(innerSetter, SetField, value, innerSetter)
+		return s.executeNested(SetField, value, innerSetter)
 	case ErrNotSetter:
 		// Point to the target item type, then wait for the Set below
 		elem = elem.Elem()
