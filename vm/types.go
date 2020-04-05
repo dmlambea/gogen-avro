@@ -23,6 +23,7 @@ const (
 
 	primitiveTypesMarker
 
+	TypeAcc    // This type is special for moving accumulator only
 	TypeRecord // This type is special for discarding record types only
 	TypeBlock  // This type is special for discarding blocks types only
 )
@@ -71,6 +72,8 @@ func (t Type) String() string {
 		return "string"
 	case TypeBytes:
 		return "bytes"
+	case TypeAcc:
+		return "acc"
 	case TypeRecord:
 		return "record"
 	case TypeBlock:

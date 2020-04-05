@@ -35,7 +35,12 @@ func (e engine) doRun(depth, pc int, setter setters.Setter) (err error) {
 
 	movFn := func() {
 		var obj interface{}
-		obj, err = readInput(inst.tp, e.input)
+		switch inst.tp {
+		case TypeAcc:
+			obj = acc
+		default:
+			obj, err = readInput(inst.tp, e.input)
+		}
 		if err == nil {
 			err = setter.Execute(setters.SetField, obj)
 		}
@@ -116,7 +121,7 @@ func (e engine) doRun(depth, pc int, setter setters.Setter) (err error) {
 		case OpJmp:
 			pc += inst.pos
 		case OpJmpEq:
-			if acc == int64(inst.val.(int)) {
+			if acc == inst.val.(int64) {
 				pc += inst.pos
 			}
 		case OpRecord:
