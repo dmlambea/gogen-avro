@@ -1,7 +1,6 @@
 package setters
 
 import (
-	"errors"
 	"fmt"
 	"reflect"
 )
@@ -44,10 +43,20 @@ func (s *sliceSetter) Init(arg interface{}) (err error) {
 	return
 }
 
-// Execute should not be called for map setters. The inner setter should be
-// used instead.
+// Execute should only be called for slice setters whenever value is actually the
+// full contents of the fields.
 func (s *sliceSetter) Execute(op OperationType, value interface{}) (err error) {
-	return errors.New("shouldn't be called directly")
+	if op != SetField {
+		return
+	}
+	valueElem := reflect.ValueOf(value)
+	fmt.Printf("Slice kind %s\n", valueElem.Kind())
+	if valueElem.Kind() != reflect.Slice && valueElem.Kind() != reflect.Array {
+		return ErrTypeNotSupported
+	}
+	s.sliceElem.Elem().Set(valueElem)
+	s.entries = 0 // Intentionally exhaust this setter
+	return
 }
 
 // IsExhausted returns true if no more entries are expected to be consumed
