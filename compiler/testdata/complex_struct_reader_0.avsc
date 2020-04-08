@@ -1,0 +1,25 @@
+{
+    "type": "record",
+    "name": "ComplexStructReader",
+    "fields": [ {
+        "name": "aEnum",
+        "type": "enum",
+        "values": ["A", "B", "C"]
+    }, {
+        "name": "aInt",
+        "type": "int"
+    }, {
+        "name": "aRec",
+        "type": {
+            "name": "SimpleRecord",
+            "type": "record",
+            "fields": [ {
+                "name": "innerInt",
+                "type": "int"
+            } ]
+        }
+    }, {
+        "name": "aUnion",
+        "type": [ "string", { "name": "options", "type": "enum", "symbols": ["a", "b", "c"] } ]
+    } ]
+}

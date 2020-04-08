@@ -1,0 +1,16 @@
+0:	sort [4 3 2 0 1]
+1:	mov bytes
+2:	record	--> 11 [14]
+3:	mov string
+4:	mov float
+5:	discard int
+6:	discard block	--> 3 [10]
+7:	discard string
+8:	discard int
+9:	blockEnd
+10:	block	--> 2 [13]
+11:	record	--> 2 [14]
+12:	blockEnd
+13:	ret
+14:	mov int
+15:	ret

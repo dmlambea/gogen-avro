@@ -1,0 +1,33 @@
+{
+    "type": "record",
+    "name": "ComplexStructWriter",
+    "fields": [ {
+        "name": "aBytes",
+        "type": "bytes"
+    }, {
+        "name": "aRec",
+        "type": {
+            "name": "SimpleRecord",
+            "type": "record",
+            "fields": [ {
+                "name": "innerInt",
+                "type": "int"
+            } ]
+        }
+    }, {
+        "name": "aString",
+        "type": "string"
+    }, {
+        "name": "aFloat",
+        "type": "float"
+    }, {
+        "name": "aInt",
+        "type": "int"
+    }, {
+        "name": "aIntMap",
+        "type": {"type": "map", "values": "int"}
+    }, {
+        "name": "aRecArray",
+        "type": {"type": "array", "items": "SimpleRecord"}
+    } ]
+}

@@ -1,0 +1,7 @@
+0:	load
+1:	jmpEq 0	--> 4 [6]
+2:	mov acc
+3:	jmpEq 1	--> 1 [5]
+4:	halt (0)
+5:	mov string
+6:	ret

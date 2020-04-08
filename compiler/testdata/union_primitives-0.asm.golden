@@ -1,0 +1,24 @@
+0:	load
+1:	mov acc
+2:	jmpEq 0	--> 7 [10]
+3:	jmpEq 1	--> 8 [12]
+4:	jmpEq 2	--> 9 [14]
+5:	jmpEq 3	--> 10 [16]
+6:	jmpEq 4	--> 11 [18]
+7:	jmpEq 5	--> 12 [20]
+8:	jmpEq 6	--> 13 [22]
+9:	halt (0)
+10:	mov bool
+11:	jmp	--> 11 [23]
+12:	mov int
+13:	jmp	--> 9 [23]
+14:	mov long
+15:	jmp	--> 7 [23]
+16:	mov float
+17:	jmp	--> 5 [23]
+18:	mov double
+19:	jmp	--> 3 [23]
+20:	mov string
+21:	jmp	--> 1 [23]
+22:	mov bytes
+23:	ret

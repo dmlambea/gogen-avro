@@ -1,0 +1,27 @@
+{
+    "type": "record",
+    "name": "ComplexStructReader",
+    "fields": [ {
+        "name": "aFloat",
+        "type": "float"
+    }, {
+        "name": "aRecArray",
+        "type": {"type": "array", "items": "SimpleRecord"}
+    }, {
+        "name": "aString",
+        "type": "string"
+    }, {
+        "name": "aRec",
+        "type": {
+            "name": "SimpleRecord",
+            "type": "record",
+            "fields": [ {
+                "name": "innerInt",
+                "type": "int"
+            } ]
+        }
+    }, {
+        "name": "aBytes",
+        "type": "bytes"
+    } ]
+}
