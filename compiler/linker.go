@@ -30,8 +30,9 @@ func (c *compiler) link(main *method) (insts []vm.Instruction) {
 			// Block instructions' positions are already computed by the compiler, since their targets
 			// belong to the same method they're getting compiled in.
 			if insts[pos].IsJumpType() && !insts[pos].IsBlockType() {
-				targetMethod := m.methodRefs[i]
-				insts[pos].SetPos(targetMethod.offset - pos - 1)
+				if targetMethod, exists := m.methodRefs[i]; exists {
+					insts[pos].SetPos(targetMethod.offset - pos - 1)
+				}
 			}
 			pos++
 		}
