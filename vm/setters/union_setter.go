@@ -1,97 +1,123 @@
 package setters
 
 import (
+	"fmt"
 	"reflect"
 )
 
+// BaseUnion is the base type for all unions
+type BaseUnion struct {
+	Type  int64
+	Value interface{}
+}
+
+// Self-locator for BaseUnion
+func (u *BaseUnion) self() *BaseUnion {
+	return u
+}
+
+type unionHelper interface {
+	self() *BaseUnion
+	UnionTypes() []reflect.Type
+}
+
 func newUnionSetter(union interface{}) *unionSetter {
-	return &unionSetter{helper: union.(unionHelper)}
+	helper := union.(unionHelper)
+	types := helper.UnionTypes()
+	l := len(types)
+	fields := make([]interface{}, l, l)
+	for i := range fields {
+		fields[i] = types[i]
+	}
+	return &unionSetter{
+		sortableFieldsComponent: newSortableFieldsComponent(fields),
+		baseUnion:               helper.self(),
+	}
 }
 
 type unionSetter struct {
 	exhaustNotifierComponent
-	curFld int
-	helper unionHelper
-	inner  Setter
+	sortableFieldsComponent
+	currentField int
+	baseUnion    *BaseUnion
 }
 
 func (s *unionSetter) reset() (err error) {
-	s.curFld = 0
+	s.currentField = 0
+	s.initSortOrder()
 	return nil
 }
 
-// Primitive setters allow for no initialization.
-// TODO use this to infor about the order of fields.
+// Union setter can be initialized with the order its types
+// are to be assigned.
 func (s *unionSetter) Init(arg interface{}) error {
-	return ErrNoInitialization
+	positions, ok := arg.([]int)
+	if ok {
+		s.sort(positions)
+		return nil
+	}
+	return fmt.Errorf("struct setter initialization expects []int, got %T", positions)
 }
 
 // Field 0 is the union type discriminator, 1 is the value
 func (s *unionSetter) IsExhausted() bool {
-	return s.curFld > 1
+	return s.currentField > 1
 }
 
 // GetInner can only be called for complex value types, and after the type disciminator
 // has been read.
 func (s *unionSetter) GetInner() (inner Setter, err error) {
-	if s.curFld != 1 {
+	if s.currentField != 1 {
 		return nil, ErrTypeNotSupported
 	}
 
-	if s.inner == nil {
-		return nil, ErrTypeNotSupported
+	// Create the appropriate union type element
+	t := s.get(int(s.baseUnion.Type)).(reflect.Type)
+	valueElem := reflect.New(t.Elem())
+
+	// Try and match it as a complex type
+	if inner, err = NewSetterFor(valueElem.Elem().Addr().Interface()); err == nil {
+		// Must install a notification cb for setting the copy onto the interface field
+		inner.setExhaustCallback(func(_ Setter) {
+			reflect.ValueOf(&s.baseUnion.Value).Elem().Set(valueElem.Elem().Convert(t.Elem()))
+			s.goNext()
+		})
 	}
-	return s.inner, nil
+	return
 }
 
 // Execute performs the given operation and advances its current field pointer,
 // if apply. If the current field happens to be a nested field, the operation is applied
 // recursively. In this case, the current pointer cannot be advanced until the inner
 // setter gets exhausted. Executing past the last field returns ErrSetterEOF.
-func (s *unionSetter) Execute(op OperationType, value interface{}) (err error) {
-	base := s.helper.self()
-	switch s.curFld {
+func (s *unionSetter) Execute(op OperationType, value interface{}) error {
+	switch s.currentField {
 	case 0:
 		// Only SetField makes sense to execute. SkipField always succeeds.
 		if op != SetField {
 			break
 		}
-		base.Type = value.(int64)
-
-		// Create the appropriate union type element
-		valueElem := reflect.New(s.helper.UnionTypes()[base.Type].Elem())
-
-		// Try and match it as a complex type
-		if s.inner, err = NewSetterFor(valueElem.Elem().Addr().Interface()); err == nil {
-			// Must install a notification cb for setting the copy onto the interface field
-			s.inner.setExhaustCallback(func(_ Setter) {
-				reflect.ValueOf(&base.Value).Elem().Set(valueElem.Elem())
-				s.goNext()
-			})
-		}
-		err = nil // Disable nested setter's error propagation
+		s.baseUnion.Type = value.(int64)
 	case 1:
-		// If there is a nested Setter, use it for this field. Nested triggers goNext when exhausted.
-		if s.inner != nil {
-			return s.inner.Execute(op, value)
+		if inner, err := s.GetInner(); err == nil {
+			// If there is a nested Setter, use it for this field. Nested triggers goNext when exhausted.
+			return inner.Execute(op, value)
 		}
 
 		// Only SetField makes sense to execute. SkipField always succeeds.
 		if op != SetField {
 			break
 		}
-		base.Value = value
+		s.baseUnion.Value = value
 	}
 
-	if err == nil {
-		s.goNext()
-	}
-	return
+	s.goNext()
+	return nil
 }
 
 // goNext advances internal current pointer. No error checking is performed.
 func (s *unionSetter) goNext() {
-	s.curFld++
+	s.currentField++
 	if s.IsExhausted() && s.hasExhaustCallback() {
 		s.trigger(s)
 	}

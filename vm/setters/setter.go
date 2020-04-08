@@ -37,22 +37,6 @@ type resettable interface {
 	reset() error
 }
 
-type unionHelper interface {
-	self() *BaseUnion
-	UnionTypes() []reflect.Type
-}
-
-// BaseUnion is the base type for all unions
-type BaseUnion struct {
-	Type  int64
-	Value interface{}
-}
-
-// Self-locator for BaseUnion
-func (u *BaseUnion) self() *BaseUnion {
-	return u
-}
-
 var (
 	// ErrExhausted is a sentinel error indicating that all the
 	// fields have been set, so this setter is exhausted.
