@@ -1,6 +1,6 @@
 package schema
 
-// NewPrimitiveType makes and/or returns the cached definition of a primitive type.
+// NewPrimitiveType returns the cached definition of a primitive type.
 func NewPrimitiveType(avroName string) *primitiveType {
 	return primitiveTypesCache[avroName]
 }
