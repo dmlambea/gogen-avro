@@ -1,4 +1,3 @@
-// Compiler has methods to generate GADGT VM bytecode from Avro schemas
 package compiler
 
 import (
@@ -10,10 +9,8 @@ import (
 	"github.com/actgardner/gogen-avro/vm"
 )
 
-// Given two Avro schemas, compile them into a program which can read the data
+// CompileSchemaBytes creates a runnable program which can read the data
 // written by `writer` and store it in the structs generated for `reader`.
-// If you're reading records from an OCF you can use the New<RecordType>Reader()
-// method that's generated for you, which will parse the schemas automatically.
 func CompileSchemaBytes(writer, reader []byte) (p vm.Program, err error) {
 	var writerType schema.GenericType
 	if writerType, err = parseSchema(writer); err != nil {
@@ -43,21 +40,25 @@ func Compile(writer, reader schema.GenericType) (p vm.Program, err error) {
 	if err != nil {
 		return
 	}
-	if _, ok := reader.(*schema.RecordType); ok {
-		// Make sure main is just a call to a record type
-		if main.Size() != 1 || len(main.methodRefs) != 1 {
-			err = fmt.Errorf("invalid program entry point for type %t: main size %d, nested methods %d",
-				reader, main.Size(), len(main.methodRefs))
+
+	// Try and optimize the main method if it happens that it's just
+	// a call to another one
+	if main.Size() == 1 && main.code[0].IsRecordType() {
+		// There should be a call instruction in position 0
+		subroutine, ok := main.methodRefs[0]
+		if !ok {
+			err = fmt.Errorf("invalid program entry point for type %s: main size %d, nested methods %d",
+				reader.Name(), main.Size(), len(main.methodRefs))
 			return
 		}
-		// There should be a call instruction in position 0
-		main = main.methodRefs[0]
-		delete(c.methods, main.name)
+		main = subroutine
+		delete(c.methods, subroutine.name)
 	} else {
+		// Subroutines have already a Ret instruction, but main don't
 		main.append(vm.Ret())
 	}
 	linkedCode := c.link(main)
-	return vm.NewProgram(linkedCode), nil
+	return vm.NewProgram(linkedCode, c.errors), nil
 }
 
 func parseSchema(s []byte) (schema.GenericType, error) {
