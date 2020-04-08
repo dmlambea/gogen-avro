@@ -11,7 +11,7 @@ import (
 
 func TestProgram(t *testing.T) {
 	instructionSet := []vm.Instruction{
-		vm.Halt(),
+		vm.Halt(0),
 		vm.Load(),
 		vm.Skip(),
 		vm.EndBlock(),
@@ -41,7 +41,7 @@ func TestProgram(t *testing.T) {
 		vm.Sort([]int{3, 2, 1, 0}),
 	}
 
-	p := vm.NewProgram(instructionSet)
+	p := vm.NewProgram(instructionSet, nil)
 	asm1 := p.String()
 	var buf bytes.Buffer
 	_, err := p.WriteTo(&buf)

@@ -43,7 +43,7 @@ func getProgram() vm.Program {
 		vm.Mov(vm.TypeInt),
 		vm.Mov(vm.TypeString),
 		vm.Ret(),
-	})
+	}, nil)
 }
 
 func getInputDataFor(amount, blocks int) *bytes.Buffer {

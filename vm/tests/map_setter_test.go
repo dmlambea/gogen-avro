@@ -73,7 +73,7 @@ var (
 		byte(vm.OpMov), byte(vm.TypeString), // Outer Map key
 		byte(vm.OpMov), byte(vm.TypeString), // Outer Map value
 		byte(vm.OpEndBlock),
-		byte(vm.OpHalt),
+		byte(vm.OpRet),
 	}
 )
 
