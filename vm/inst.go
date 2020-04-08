@@ -15,8 +15,8 @@ type Instruction struct {
 
 // Halt stops the VM.
 // TODO: add exit code for erroring.
-func Halt() Instruction {
-	return Instruction{op: OpHalt}
+func Halt(val int64) Instruction {
+	return Instruction{op: OpHalt, val: val}
 }
 
 // Sort tells the VM to rearrange the target struct's fields when reading data.
@@ -148,6 +148,19 @@ func (i *Instruction) SetPos(pos int) {
 	i.pos = pos
 }
 
+// IsRecordType returns true if this instruction can call a subroutine
+// for either reading or discarding a record.
+func (i Instruction) IsRecordType() bool {
+	switch i.op {
+	case OpRecord, OpRecordEq:
+		return true
+	case OpDiscard, OpDiscardEq:
+		return i.tp == TypeRecord
+	default:
+		return false
+	}
+}
+
 // IsJumpType returns true if this instruction can make the VM to move its program counter
 // to a relative position counting after the next instruction in the program.
 func (i Instruction) IsJumpType() bool {
@@ -176,8 +189,11 @@ func (i Instruction) IsBlockType() bool {
 // String is the implementation of Stringer for this instruction.
 func (i Instruction) String() string {
 	switch i.op {
-	case OpError, OpHalt, OpLoad, OpSkip, OpRet, OpEndBlock:
+	case OpError, OpLoad, OpSkip, OpRet, OpEndBlock:
 		return i.op.String()
+
+	case OpHalt:
+		return fmt.Sprintf("%s (%d)", i.op, i.val)
 
 	case OpMov, OpDiscard:
 		if i.IsJumpType() {
@@ -208,9 +224,9 @@ func (i Instruction) String() string {
 // Size returns the serialized size of this instruction.
 func (i Instruction) Size() int {
 	switch i.op {
-	case OpError, OpHalt, OpLoad, OpSkip, OpRet, OpEndBlock:
+	case OpError, OpLoad, OpSkip, OpRet, OpEndBlock:
 		return 1
-	case OpMov, OpJmp, OpRecord, OpBlock:
+	case OpHalt, OpMov, OpJmp, OpRecord, OpBlock:
 		return 2
 	case OpDiscard:
 		if !i.IsJumpType() {
@@ -238,7 +254,10 @@ func (i Instruction) WriteTo(w io.Writer) (n int64, err error) {
 	buf[0] = byte(i.op)
 
 	switch i.op {
-	case OpError, OpHalt, OpLoad, OpSkip, OpRet, OpEndBlock:
+	case OpError, OpLoad, OpSkip, OpRet, OpEndBlock:
+
+	case OpHalt:
+		buf[1] = byte(i.val.(int64))
 
 	case OpMov:
 		buf[1] = byte(i.tp)
@@ -283,7 +302,7 @@ func (i Instruction) WriteTo(w io.Writer) (n int64, err error) {
 func decodeInstruction(input []byte) (inst Instruction) {
 	switch Opcode(input[0]) {
 	case OpHalt:
-		inst = Halt()
+		inst = Halt(int64(input[1]))
 	case OpSort:
 		l := int(input[1])
 		data := make([]int, l)
