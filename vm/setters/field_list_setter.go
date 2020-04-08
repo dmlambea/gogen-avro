@@ -6,51 +6,43 @@ import (
 )
 
 func newFieldListSetter(fields []interface{}) *fieldListSetter {
-	origFields := make([]interface{}, len(fields))
-	copy(origFields, fields)
 	return &fieldListSetter{
-		fldCount:   len(fields),
-		origFields: origFields,
-		fields:     fields,
+		sortableFieldsComponent: newSortableFieldsComponent(fields),
 	}
 }
 
 type fieldListSetter struct {
 	exhaustNotifierComponent
-	curFld     int
-	fldCount   int
-	origFields []interface{}
-	fields     []interface{}
+	sortableFieldsComponent
+	currentField int
 }
 
 func (s *fieldListSetter) reset() (err error) {
-	s.curFld = 0
+	s.currentField = 0
 	for i := range s.fields {
-		r, ok := s.fields[i].(resettable)
-		switch ok {
-		case true:
+		if r, ok := s.fields[i].(resettable); ok {
 			if err = r.reset(); err != nil {
 				return
 			}
-		case false:
-			s.fields[i] = s.origFields[i]
 		}
 	}
+	s.initSortOrder()
 	return nil
 }
 
-// Primitive setters allow for no initialization.
-// TODO use this to infor about the order of fields.
+// Field list setter can be initialized with the order its fields
+// are to be read.
 func (s *fieldListSetter) Init(arg interface{}) error {
 	positions, ok := arg.([]int)
-	if !ok {
-		return fmt.Errorf("struct setter initialization expects []int, got %T", positions)
+	if ok {
+		s.sort(positions)
+		return nil
 	}
-	return s.sort(positions)
+	return fmt.Errorf("struct setter initialization expects []int, got %T", positions)
 }
 
 func (s *fieldListSetter) IsExhausted() bool {
-	return s.curFld >= s.fldCount
+	return s.currentField >= s.fieldCount
 }
 
 // GetInner returns the current field, which must be a setter, or an error otherwise.
@@ -72,7 +64,7 @@ func (s *fieldListSetter) GetInner() (inner Setter, err error) {
 			return
 		}
 		// Settle down setter
-		s.fields[s.curFld] = inner
+		s.set(s.currentField, inner)
 	}
 
 	// Must install a notification cb to be informed of field consumption
@@ -123,35 +115,9 @@ func (s *fieldListSetter) executeNested(op OperationType, value interface{}, inn
 	return inner.Execute(op, value)
 }
 
-// sort replaces the ordering of the fields within this setter. the length of positions
-// cannot exceed the length of the fields array. The position indexes must be between 0
-// and len(fields)-1. All fields not referred to in the positions array are put in order
-// of appearance at the end of the list.
-func (s *fieldListSetter) sort(positions []int) (err error) {
-	sortedFields := make([]interface{}, s.fldCount)
-	for i := range positions {
-		sortedFields[i] = s.fields[positions[i]]
-		s.fields[positions[i]] = nil
-	}
-	posCount := len(positions)
-	if posCount != s.fldCount {
-		for i := 0; i < s.fldCount; i++ {
-			if s.fields[i] != nil {
-				sortedFields[posCount] = s.fields[i]
-				posCount++
-				if posCount == s.fldCount {
-					break
-				}
-			}
-		}
-	}
-	s.fields = sortedFields
-	return
-}
-
 // goNext advances internal current pointer. No error checking is performed.
 func (s *fieldListSetter) goNext() {
-	s.curFld++
+	s.currentField++
 	if s.IsExhausted() && s.hasExhaustCallback() {
 		s.trigger(s)
 	}
@@ -164,7 +130,7 @@ func (s *fieldListSetter) getCurrentField() (fld interface{}, err error) {
 	case s.IsExhausted():
 		err = ErrExhausted
 	default:
-		fld = s.fields[s.curFld]
+		fld = s.get(s.currentField)
 	}
 	return
 }
@@ -177,7 +143,7 @@ func (s *fieldListSetter) setPointerElem(elem reflect.Value, value interface{}) 
 	switch err {
 	case nil:
 		// Make setter final
-		s.fields[s.curFld] = innerSetter
+		s.set(s.currentField, innerSetter)
 		return s.executeNested(SetField, value, innerSetter)
 	case ErrNotSetter:
 		// Point to the target item type, then wait for the Set below
