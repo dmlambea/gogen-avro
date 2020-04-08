@@ -24,13 +24,6 @@ func asField(t schema.GenericType) *schema.FieldType {
 	return t.(*schema.FieldType)
 }
 
-func assertNotReference(t schema.GenericType, which string) error {
-	if _, ok := t.(*schema.Reference); ok {
-		return fmt.Errorf("unresolved reference in %s: %s", which, t)
-	}
-	return nil
-}
-
 func isUnionType(t schema.GenericType) bool {
 	_, ok := t.(*schema.UnionType)
 	return ok
@@ -49,42 +42,43 @@ func refineOrder(src []int) (tgt []int) {
 	return tgt[:cur]
 }
 
+// matcherFunc is a utility function to match fields for a given one. It can be used to match
+// record fields and union fields.
+type matcherFunc func(field *schema.FieldType) (*schema.FieldType, error)
+
 // getReadOrder computes in which order the reader needs to read writer's output.
 // As the algorithm resolves, it tries to detect if all valid fields come in ascending
-// order. It that is the case, the compiler would optimize field rearraging.
-func getReadOrder(wrt, rdr *schema.RecordType) (order []int, allAsc bool, err error) {
+// order. It that is the case, the compiler would optimize field rearraging. The field
+// locator param allows getReadOrder to be able to find fields by different criteria, as
+// e.g. when matchig record's fields by name or union's fields by readability.
+func getReadOrder(wrtFields, rdrFields []schema.GenericType, matcher matcherFunc) (order []int, allAsc bool, err error) {
 	lastIdx := -1
 	allAsc = true // Ascending order is kept true until a non-natural ordering is detected
 
 	// For every writer's field, let's see in what position the reader expects the value
-	for _, wrtChild := range wrt.Children() {
+	for _, wrtChild := range wrtFields {
 		wrtFld := wrtChild.(*schema.FieldType)
-		var rdrFld *schema.FieldType
 		code := oDiscardable
-		if rdr != nil {
-			// All children within a record are fields, and must be found by name
-			if rdrFld = rdr.FindFieldByNameOrAlias(wrtFld); rdrFld != nil {
-				if !wrtFld.Type().IsReadableBy(rdrFld.Type(), make(schema.VisitMap)) {
-					err = fmt.Errorf("incompatible schemas: field %s in reader has incompatible type in writer field %s", rdrFld.Name(), wrtFld.Name())
-					return
-				}
-				code = rdrFld.Index()
-				if code < lastIdx {
-					allAsc = false
-				}
-				lastIdx = code
+
+		var rdrFld *schema.FieldType
+		if rdrFld, err = matcher(wrtFld); err != nil {
+			return
+		}
+		if rdrFld != nil {
+			code = rdrFld.Index()
+			if code < lastIdx {
+				allAsc = false
 			}
+			lastIdx = code
 		}
 		order = append(order, code)
 	}
 
 	// The rest of reader's fields must be skipped
 	var extras []int
-	if rdr != nil {
-		for idx := range rdr.Children() {
-			if !inArray(order, idx) {
-				extras = append(extras, oSkippable)
-			}
+	for idx := range rdrFields {
+		if !inArray(order, idx) {
+			extras = append(extras, oSkippable)
 		}
 	}
 
