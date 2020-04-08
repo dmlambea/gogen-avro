@@ -30,6 +30,15 @@ func (m method) IsAnon() bool {
 	return m.name == ""
 }
 
+func (m *method) append(instructions ...vm.Instruction) *method {
+	m.code = append(m.code, instructions...)
+	return m
+}
+
+func (m method) appendTo(another *method) {
+	another.append(m.code...)
+}
+
 func (m method) String() string {
 	var buf strings.Builder
 	if m.IsAnon() {
@@ -75,9 +84,4 @@ func (m *method) addJumpInstruction(inst vm.Instruction, anotherMethod *method) 
 		m.methodRefs[instPos] = anotherMethod
 	}
 	return instPos
-}
-
-func (m *method) append(instructions ...vm.Instruction) *method {
-	m.code = append(m.code, instructions...)
-	return m
 }
