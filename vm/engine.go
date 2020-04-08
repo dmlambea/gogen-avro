@@ -94,7 +94,8 @@ func (e engine) doRun(depth, pc int, setter setters.Setter) (err error) {
 		case OpError:
 			err = fmt.Errorf("bad instruction %+v at %d", inst, pc)
 		case OpHalt:
-			return nil
+			err = fmt.Errorf("execution halted: %s", e.prog.errors[int(inst.val.(int64))])
+			return
 		case OpSort:
 			err = setter.Init(inst.val.([]int))
 		case OpLoad:
