@@ -7,32 +7,36 @@ import (
 	"math"
 )
 
-type ByteReader interface {
+type byteReader interface {
 	io.Reader
 	ReadByte() (byte, error)
 }
 
-func readBool(r io.Reader) (bool, error) {
-	var b byte
-	var err error
-	if br, ok := r.(ByteReader); ok {
-		b, err = br.ReadByte()
-	} else {
-		bs := make([]byte, 1)
-		_, err = io.ReadFull(r, bs)
-		if err != nil {
-			return false, err
-		}
-		b = bs[0]
+func readByte(r io.Reader) (byte, error) {
+	if br, ok := r.(byteReader); ok {
+		return br.ReadByte()
 	}
-	return b == 1, nil
+
+	bs := make([]byte, 1)
+	if _, err := io.ReadFull(r, bs); err != nil {
+		return 0, err
+	}
+	return bs[0], nil
+}
+
+func readBool(r io.Reader) (bool, error) {
+	b, err := readByte(r)
+	if err == nil {
+		return (b == 1), nil
+	}
+	return false, err
 }
 
 func readInt(r io.Reader) (int32, error) {
 	var v int
 	var b byte
 	var err error
-	if br, ok := r.(ByteReader); ok {
+	if br, ok := r.(byteReader); ok {
 		for shift := uint(0); ; shift += 7 {
 			if b, err = br.ReadByte(); err != nil {
 				return 0, err
@@ -63,7 +67,7 @@ func readLong(r io.Reader) (int64, error) {
 	var v uint64
 	var b byte
 	var err error
-	if br, ok := r.(ByteReader); ok {
+	if br, ok := r.(byteReader); ok {
 		for shift := uint(0); ; shift += 7 {
 			if b, err = br.ReadByte(); err != nil {
 				return 0, err
@@ -146,5 +150,11 @@ func readBytes(r io.Reader) ([]byte, error) {
 	}
 	bb := make([]byte, size)
 	_, err = io.ReadFull(r, bb)
+	return bb, err
+}
+
+func readFixed(r io.Reader, size int) ([]byte, error) {
+	bb := make([]byte, size)
+	_, err := io.ReadFull(r, bb)
 	return bb, err
 }
