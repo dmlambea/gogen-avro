@@ -20,8 +20,7 @@ const (
 	TypeDouble
 	TypeString
 	TypeBytes
-
-	primitiveTypesMarker
+	TypeFixed
 
 	TypeAcc    // This type is special for moving accumulator only
 	TypeRecord // This type is special for discarding record types only
@@ -46,6 +45,8 @@ func TypeFromString(name string) Type {
 	case "string":
 		return TypeString
 	case "bytes":
+		return TypeBytes
+	case "fixed":
 		return TypeBytes
 	default:
 		return TypeError
@@ -72,6 +73,8 @@ func (t Type) String() string {
 		return "string"
 	case TypeBytes:
 		return "bytes"
+	case TypeFixed:
+		return "fixed"
 	case TypeAcc:
 		return "acc"
 	case TypeRecord:

@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 )
@@ -11,6 +12,11 @@ type Instruction struct {
 	tp  Type
 	val interface{}
 	pos int
+}
+
+// Ret returns from a record reading routine.
+func Ret() Instruction {
+	return Instruction{op: OpRet}
 }
 
 // Halt stops the VM.
@@ -34,15 +40,19 @@ func Mov(t Type) Instruction {
 	return Instruction{op: OpMov, tp: t}
 }
 
-// MovEq vv tt loads data of type tt if the first int64 value of input matches vv.
-// The int64 value is consumed this way and therefore discarded.
-func MovEq(val int64, t Type) Instruction {
-	return Instruction{op: OpMovEq, tp: t, val: val}
+// MovFixed loads "amount" data of type "fixed" into current field.
+func MovFixed(amount int64) Instruction {
+	return Instruction{op: OpMov, tp: TypeFixed, val: amount}
 }
 
 // Discard tt discards input data of type tt.
 func Discard(t Type) Instruction {
 	return Instruction{op: OpDiscard, tp: t}
+}
+
+// DiscardFixed discards "amount" bytes of data.
+func DiscardFixed(amount int64) Instruction {
+	return Instruction{op: OpDiscard, tp: TypeFixed, val: amount}
 }
 
 // DiscardRecord xx is a special type of discard so that a full record of data can be
@@ -61,28 +71,6 @@ func DiscardBlock(relPos int) Instruction {
 	return Instruction{op: OpDiscard, tp: TypeBlock, pos: relPos}
 }
 
-// DiscardEq vv tt discards data of type tt, if the first int64 value of input
-// matches vv. The int64 value is consumed this way and therefore discarded as well.
-func DiscardEq(val int64, t Type) Instruction {
-	return Instruction{op: OpDiscardEq, tp: t, val: val}
-}
-
-// DiscardEqRecord val xx is a special type of discard so that a full record of data can be
-// discarded, if the value of the acc equals val. Since the size of the data to be discarded
-// cannot be known in advance, the VM needs to consume it completely. The argument xx is the
-// relative address of the routine that is used to consume the input.
-func DiscardEqRecord(val int64, relPos int) Instruction {
-	return Instruction{op: OpDiscardEq, tp: TypeRecord, pos: relPos, val: val}
-}
-
-// DiscardEqBlock val xx is a special type of discard so that a full stream of data blocks can be
-// discarded, if the value of the acc equals val. Since the size of the data to be discarded
-// cannot be always known in advance, the VM needs to consume it completely. The argument xx
-// is the relative address of the code that is used to consume the input.
-func DiscardEqBlock(val int64, relPos int) Instruction {
-	return Instruction{op: OpDiscardEq, tp: TypeBlock, pos: relPos, val: val}
-}
-
 // Skip avoids processing the current field, so it will remain zero-valued.
 func Skip() Instruction {
 	return Instruction{op: OpSkip}
@@ -93,10 +81,17 @@ func Jmp(relPos int) Instruction {
 	return Instruction{op: OpJmp, pos: relPos}
 }
 
-// JmpEq vv xx jumps to the relative position xx if the first int64 value of input
+// Case vv xx jumps to the relative position xx if the first int64 value of input
 // matches vv. The int64 value is consumed this way and therefore discarded.
-func JmpEq(val int64, relPos int) Instruction {
-	return Instruction{op: OpJmpEq, pos: relPos, val: val}
+func Case(val int64, relPos int) Instruction {
+	return Instruction{op: OpCase, pos: relPos, val: val}
+}
+
+// SkipCase vv xx skips the current field and jumps to the relative position xx
+// if the first int64 value of input matches vv. The int64 value is consumed this
+// way and therefore discarded.
+func SkipCase(val int64, relPos int) Instruction {
+	return Instruction{op: OpSkipCase, pos: relPos, val: val}
 }
 
 // Record xx reads a record by calling the routine at relative position xx.
@@ -104,29 +99,10 @@ func Record(relPos int) Instruction {
 	return Instruction{op: OpRecord, pos: relPos}
 }
 
-// RecordEq vv xx reads a record by calling the routine at relative position xx, if the
-// first int64 value of input matches vv. The int64 value is consumed this way and
-// therefore discarded.
-func RecordEq(val int64, relPos int) Instruction {
-	return Instruction{op: OpRecordEq, pos: relPos, val: val}
-}
-
-// Ret returns from a record reading routine.
-func Ret() Instruction {
-	return Instruction{op: OpRet}
-}
-
 // Block xx reads as many blocks from input as it encounters, then jumps to the
 // relative position xx.
 func Block(relPos int) Instruction {
 	return Instruction{op: OpBlock, pos: relPos}
-}
-
-// BlockEq vv xx reads as many blocks from input as it encounters, then jumps to the
-// relative position xx, if the first int64 value of input matches vv. The int64 value
-// is consumed this way and therefore discarded.
-func BlockEq(val int64, relPos int) Instruction {
-	return Instruction{op: OpBlockEq, pos: relPos, val: val}
 }
 
 // EndBlock matches its corresponding Block to signal the end of the block fields.
@@ -152,9 +128,9 @@ func (i *Instruction) SetPos(pos int) {
 // for either reading or discarding a record.
 func (i Instruction) IsRecordType() bool {
 	switch i.op {
-	case OpRecord, OpRecordEq:
+	case OpRecord:
 		return true
-	case OpDiscard, OpDiscardEq:
+	case OpDiscard:
 		return i.tp == TypeRecord
 	default:
 		return false
@@ -165,9 +141,9 @@ func (i Instruction) IsRecordType() bool {
 // to a relative position counting after the next instruction in the program.
 func (i Instruction) IsJumpType() bool {
 	switch i.op {
-	case OpJmp, OpRecord, OpBlock, OpJmpEq, OpRecordEq, OpBlockEq:
+	case OpJmp, OpRecord, OpBlock, OpCase, OpSkipCase:
 		return true
-	case OpDiscard, OpDiscardEq:
+	case OpDiscard:
 		return i.tp == TypeBlock || i.tp == TypeRecord
 	default:
 		return false
@@ -177,9 +153,9 @@ func (i Instruction) IsJumpType() bool {
 // IsBlockType returns true if this instruction can make the VM to consume/discard block-encoded data.
 func (i Instruction) IsBlockType() bool {
 	switch i.op {
-	case OpBlock, OpBlockEq:
+	case OpBlock:
 		return true
-	case OpDiscard, OpDiscardEq:
+	case OpDiscard:
 		return i.tp == TypeBlock
 	default:
 		return false
@@ -189,28 +165,27 @@ func (i Instruction) IsBlockType() bool {
 // String is the implementation of Stringer for this instruction.
 func (i Instruction) String() string {
 	switch i.op {
-	case OpError, OpLoad, OpSkip, OpRet, OpEndBlock:
+	case OpError, OpRet, OpLoad, OpSkip, OpEndBlock:
 		return i.op.String()
 
 	case OpHalt:
 		return fmt.Sprintf("%s (%d)", i.op, i.val)
 
 	case OpMov, OpDiscard:
-		if i.IsJumpType() {
+		switch {
+		case i.IsJumpType():
+			// For discard block/record types
 			return fmt.Sprintf("%s %s\t--> %d", i.op, i.tp, i.pos)
+		case i.tp == TypeFixed:
+			return fmt.Sprintf("%s %s [%d]", i.op, i.tp, i.val)
+		default:
+			return fmt.Sprintf("%s %s", i.op, i.tp)
 		}
-		return fmt.Sprintf("%s %s", i.op, i.tp)
-
-	case OpMovEq, OpDiscardEq:
-		if i.IsJumpType() {
-			return fmt.Sprintf("%s %d %s\t--> %d", i.op, i.val, i.tp, i.pos)
-		}
-		return fmt.Sprintf("%s %d %s", i.op, i.val, i.tp)
 
 	case OpJmp, OpRecord, OpBlock:
 		return fmt.Sprintf("%s\t--> %d", i.op, i.pos)
 
-	case OpJmpEq, OpRecordEq, OpBlockEq:
+	case OpCase, OpSkipCase:
 		return fmt.Sprintf("%s %d\t--> %d", i.op, i.val, i.pos)
 
 	case OpSort:
@@ -221,148 +196,145 @@ func (i Instruction) String() string {
 	}
 }
 
-// Size returns the serialized size of this instruction.
-func (i Instruction) Size() int {
-	switch i.op {
-	case OpError, OpLoad, OpSkip, OpRet, OpEndBlock:
-		return 1
-	case OpHalt, OpMov, OpJmp, OpRecord, OpBlock:
-		return 2
-	case OpDiscard:
-		if !i.IsJumpType() {
-			return 2
-		}
-		return 3
-	case OpMovEq, OpJmpEq, OpRecordEq, OpBlockEq:
-		return 3
-	case OpDiscardEq:
-		if !i.IsJumpType() {
-			return 3
-		}
-		return 4
-	case OpSort:
-		data := i.val.([]int)
-		return 2 + len(data)
-	default:
-		panic(fmt.Sprintf("invalid instruction opCode %x", i.op))
+// readFrom is somehow similar to io.ReaderFrom for this instruction, so it reads the
+// serialized form of this instruction from the reader r, but no total bytes read count
+// is returned.
+func (i *Instruction) readFrom(r io.Reader) (err error) {
+	// Opcode
+	if b, err := readByte(r); err != nil {
+		return err
+	} else {
+		i.op = Opcode(b)
 	}
-}
 
-// WriteTo implements io.WriterTo for this instruction
-func (i Instruction) WriteTo(w io.Writer) (n int64, err error) {
-	buf := make([]byte, i.Size())
-	buf[0] = byte(i.op)
+	asType := func(val interface{}, err error) (Type, error) {
+		if err != nil {
+			return TypeError, err
+		}
+		return Type(val.(byte)), nil
+	}
+
+	asInt := func(val interface{}, err error) (int, error) {
+		if err != nil {
+			return 0, err
+		}
+		if i64, ok := val.(int64); ok {
+			return int(i64), nil
+		}
+		return int(val.(int32)), nil
+	}
 
 	switch i.op {
 	case OpError, OpLoad, OpSkip, OpRet, OpEndBlock:
 
 	case OpHalt:
-		buf[1] = byte(i.val.(int64))
+		if i.val, err = readLong(r); err != nil {
+			return
+		}
 
 	case OpMov:
-		buf[1] = byte(i.tp)
+		if i.tp, err = asType(readByte(r)); err != nil {
+			return
+		}
+		if i.tp == TypeFixed {
+			if i.val, err = readLong(r); err != nil {
+				return
+			}
+		}
+
 	case OpJmp, OpRecord, OpBlock:
-		buf[1] = byte(i.pos)
+		if i.pos, err = asInt(readLong(r)); err != nil {
+			return
+		}
 
 	case OpDiscard:
-		buf[1] = byte(i.tp)
+		if i.tp, err = asType(readByte(r)); err != nil {
+			return
+		}
 		if i.IsJumpType() {
-			buf[2] = byte(i.pos)
+			if i.pos, err = asInt(readLong(r)); err != nil {
+				return
+			}
+		} else if i.tp == TypeFixed {
+			if i.val, err = readLong(r); err != nil {
+				return
+			}
 		}
 
-	case OpMovEq:
-		buf[1] = byte(i.val.(int64))
-		buf[2] = byte(i.tp)
-	case OpJmpEq, OpRecordEq, OpBlockEq:
-		buf[1] = byte(i.val.(int64))
-		buf[2] = byte(i.pos)
-
-	case OpDiscardEq:
-		buf[1] = byte(i.val.(int64))
-		buf[2] = byte(i.tp)
-		if i.IsJumpType() {
-			buf[3] = byte(i.pos)
+	case OpCase, OpSkipCase:
+		if i.val, err = readLong(r); err != nil {
+			return
+		}
+		if i.pos, err = asInt(readLong(r)); err != nil {
+			return
 		}
 
 	case OpSort:
-		data := i.val.([]int)
-		l := len(data)
-		buf[1] = byte(l)
-		for i := 0; i < l; i++ {
-			buf[2+i] = byte(data[i])
+		var j, l int32
+		if l, err = readInt(r); err != nil {
+			return
 		}
-	}
-	var n2 int
-	n2, err = w.Write(buf)
-	return int64(n2), err
-}
-
-// decodeInstruction returns the instruction at position 0 of input. No error checking is performed to
-// ensure the input is large enough for holding the entire instruction.
-func decodeInstruction(input []byte) (inst Instruction) {
-	switch Opcode(input[0]) {
-	case OpHalt:
-		inst = Halt(int64(input[1]))
-	case OpSort:
-		l := int(input[1])
 		data := make([]int, l)
-		for i := 0; i < l; i++ {
-			data[i] = int(input[2+i])
+		for j = 0; j < l; j++ {
+			if data[j], err = asInt(readInt(r)); err != nil {
+				return
+			}
 		}
-		inst = Sort(data)
-	case OpLoad:
-		inst = Load()
-	case OpMov:
-		inst = Mov(Type(input[1]))
-	case OpMovEq:
-		inst = MovEq(int64(input[1]), Type(input[2]))
-	case OpDiscard:
-		t := Type(input[1])
-		switch t {
-		case TypeBlock:
-			inst = DiscardBlock(relByteToInt(input[2]))
-		case TypeRecord:
-			inst = DiscardRecord(relByteToInt(input[2]))
-		default:
-			inst = Discard(t)
-		}
-	case OpDiscardEq:
-		t := Type(input[2])
-		switch t {
-		case TypeBlock:
-			inst = DiscardEqBlock(int64(input[1]), relByteToInt(input[3]))
-		case TypeRecord:
-			inst = DiscardEqRecord(int64(input[1]), relByteToInt(input[3]))
-		default:
-			inst = DiscardEq(int64(input[1]), t)
-		}
-	case OpSkip:
-		inst = Skip()
-	case OpJmp:
-		inst = Jmp(relByteToInt(input[1]))
-	case OpJmpEq:
-		inst = JmpEq(int64(input[1]), relByteToInt(input[2]))
-	case OpRecord:
-		inst = Record(relByteToInt(input[1]))
-	case OpRecordEq:
-		inst = RecordEq(int64(input[1]), relByteToInt(input[2]))
-	case OpRet:
-		inst = Ret()
-	case OpBlock:
-		inst = Block(relByteToInt(input[1]))
-	case OpBlockEq:
-		inst = BlockEq(int64(input[1]), relByteToInt(input[2]))
-	case OpEndBlock:
-		inst = EndBlock()
+		i.op = OpSort
+		i.val = data
+
 	default:
-		inst = Instruction{op: OpError}
+		i.op = OpError
 	}
 	return
 }
 
-func relByteToInt(b byte) int {
-	if b < 128 {
-		return int(b)
+// WriteTo implements io.WriterTo for this instruction and writes the
+// serialized form of this instruction on the writer w.
+func (i Instruction) WriteTo(w io.Writer) (n int64, err error) {
+	var buf bytes.Buffer
+
+	// Opcode
+	WriteByte(byte(i.op), &buf)
+
+	// Operands, depending on the instruction kind
+	switch i.op {
+	case OpError, OpLoad, OpSkip, OpRet, OpEndBlock:
+
+	case OpHalt:
+		WriteLong(i.val.(int64), &buf)
+
+	case OpMov:
+		WriteByte(byte(i.tp), &buf)
+		if i.tp == TypeFixed {
+			WriteLong(i.val.(int64), &buf)
+		}
+
+	case OpJmp, OpRecord, OpBlock:
+		WriteLong(int64(i.pos), &buf)
+
+	case OpDiscard:
+		WriteByte(byte(i.tp), &buf)
+		if i.IsJumpType() {
+			WriteLong(int64(i.pos), &buf)
+		} else if i.tp == TypeFixed {
+			WriteLong(i.val.(int64), &buf)
+		}
+
+	case OpCase, OpSkipCase:
+		WriteLong(i.val.(int64), &buf)
+		WriteLong(int64(i.pos), &buf)
+
+	case OpSort:
+		data := i.val.([]int)
+		l := len(data)
+		WriteInt(int32(l), &buf)
+		for i := 0; i < l; i++ {
+			WriteInt(int32(data[i]), &buf)
+		}
 	}
-	return -(int(^b) + 1)
+
+	var n2 int
+	n2, err = w.Write(buf.Bytes())
+	return int64(n2), err
 }
