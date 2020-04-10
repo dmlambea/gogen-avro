@@ -2,142 +2,106 @@ package vm
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/actgardner/gogen-avro/vm/setters"
 )
 
-type engine struct {
-	prog       Program
-	input      ByteReader
-	mainSetter setters.Setter
+// Engine is the structure representing a program runner.
+type Engine struct {
+	Program     Program
+	StackTraces bool
+	input       io.Reader
 }
 
-func NewEngine(p Program, setter setters.Setter) engine {
-	return engine{
-		prog:       p,
-		mainSetter: setter,
+// Run executes this engine's program agains the given input. Target must be the
+// address of a variable able to hold the produced output.
+func (e Engine) Run(input io.Reader, targetAddr interface{}) error {
+	targetSetter, err := setters.NewSetterFor(targetAddr)
+	if err != nil {
+		return fmt.Errorf("unable to create a setter for target: %w", err)
 	}
+	return e.RunWithSetter(input, targetSetter)
 }
 
-// Run starts the engine
-func (e engine) Run(input ByteReader) error {
+// RunWithSetter executes this engine's program agains the given input and producing
+// its output via the given setter.
+func (e Engine) RunWithSetter(input io.Reader, setter setters.Setter) error {
 	e.input = input
-	return e.doRun(0, 0, e.mainSetter)
+	return e.runMethod(0, setter)
 }
 
-func (e engine) doRun(depth, pc int, setter setters.Setter) (err error) {
+// runMethod executes code at the given program counter, using the given setter.
+func (e Engine) runMethod(pc int, setter setters.Setter) (err error) {
 	var acc int64
 	var inst Instruction
 
-	loadFn := func() {
-		acc, err = readLong(e.input)
-	}
-
-	movFn := func() {
-		var obj interface{}
-		switch inst.tp {
-		case TypeAcc:
-			obj = acc
-		default:
-			obj, err = readInput(inst.tp, e.input)
-		}
-		if err == nil {
-			err = setter.Execute(setters.SetField, obj)
-		}
-	}
-
-	recordFn := func() {
-		var innerSetter setters.Setter
-		if innerSetter, err = setter.GetInner(); err != nil {
-			return
-		}
-		err = e.doRun(depth+1, pc+inst.pos+1, innerSetter)
-	}
-
-	discardFn := func() {
-		_, err = readInput(inst.tp, e.input)
-	}
-
-	discardBlockFn := func() {
-		if err = e.runBlock(depth+1, pc+1, setters.NewSkipperSetter()); err == nil {
-			pc += inst.pos
-		}
-	}
-
-	discardRecordFn := func() {
-		err = e.doRun(depth+1, pc+inst.pos+1, setters.NewSkipperSetter())
-	}
-
-	blockFn := func() {
-		var innerSetter setters.Setter
-		if innerSetter, err = setter.GetInner(); err != nil {
-			return
-		}
-		if err = e.runBlock(depth+1, pc+1, innerSetter); err == nil {
-			pc += inst.pos
-		}
-	}
-
-	eqFn := func(fn func()) {
-		if loadFn(); err == nil {
-			if acc == inst.val.(int64) {
-				fn()
-			} else {
-				err = setter.Execute(setters.SkipField, nil)
-			}
-		}
-	}
-
 	for {
-		inst = e.prog.instructions[pc]
+		inst = e.Program.instructions[pc]
 		switch inst.op {
 		case OpError:
 			err = fmt.Errorf("bad instruction %+v at %d", inst, pc)
 		case OpHalt:
-			err = fmt.Errorf("execution halted: %s", e.prog.errors[int(inst.val.(int64))])
-			return
+			err = fmt.Errorf("execution halted: %s", e.Program.errors[int(inst.val.(int64))])
 		case OpSort:
 			err = setter.Init(inst.val.([]int))
 		case OpLoad:
-			loadFn()
+			acc, err = readLong(e.input)
 		case OpMov:
-			movFn()
-		case OpMovEq:
-			eqFn(movFn)
-		case OpDiscardEq:
-			// No matter the value of acc, the reader's field must be discarded
-			loadFn()
-			fallthrough
+			var obj interface{}
+			switch inst.tp {
+			case TypeAcc:
+				obj = acc
+			default:
+				obj, err = readInput(inst, e.input)
+			}
+			if err == nil {
+				err = setter.Execute(setters.SetField, obj)
+			}
 		case OpDiscard:
 			switch {
 			case inst.IsJumpType() == false:
-				discardFn()
+				_, err = readInput(inst, e.input)
 			case inst.IsBlockType():
-				discardBlockFn()
+				if err = e.runBlock(pc+1, setters.NewSkipperSetter()); err == nil {
+					pc += inst.pos
+				}
 			default:
-				discardRecordFn()
+				err = e.runMethod(pc+inst.pos+1, setters.NewSkipperSetter())
 			}
 		case OpSkip:
 			err = setter.Execute(setters.SkipField, nil)
 		case OpJmp:
 			pc += inst.pos
-		case OpJmpEq:
+		case OpCase:
 			if acc == inst.val.(int64) {
 				pc += inst.pos
 			}
+		case OpSkipCase:
+			if acc == inst.val.(int64) {
+				err = setter.Execute(setters.SkipField, nil)
+				pc += inst.pos
+			}
 		case OpRecord:
-			recordFn()
-		case OpRecordEq:
-			eqFn(recordFn)
+			var innerSetter setters.Setter
+			if innerSetter, err = setter.GetInner(); err == nil {
+				err = e.runMethod(pc+inst.pos+1, innerSetter)
+			}
 		case OpBlock:
-			blockFn()
-		case OpBlockEq:
-			eqFn(blockFn)
+			var innerSetter setters.Setter
+			if innerSetter, err = setter.GetInner(); err == nil {
+				if err = e.runBlock(pc+1, innerSetter); err == nil {
+					pc += inst.pos
+				}
+			}
 		case OpRet, OpEndBlock:
 			return
 		}
 		// General error occurred in executing the instruction
 		if err != nil {
+			if e.StackTraces {
+				err = fmt.Errorf("%s\n at pc %d: '%s'", err.Error(), pc, inst)
+			}
 			return
 		}
 		pc++
@@ -145,8 +109,9 @@ func (e engine) doRun(depth, pc int, setter setters.Setter) (err error) {
 	return
 }
 
-// runBlock is a convenience method to allow running over block-serialized types (maps, arrays)
-func (e engine) runBlock(depth, pc int, setter setters.Setter) (err error) {
+// runBlock is a convenience method to allow running code dealing with
+// block-serialized types (maps, arrays), since they require a loop.
+func (e Engine) runBlock(pc int, setter setters.Setter) (err error) {
 	for {
 		// Load block length. If no more blocks (lenght==0) or an error occurs, go back
 		count, err := readLong(e.input)
@@ -172,15 +137,18 @@ func (e engine) runBlock(depth, pc int, setter setters.Setter) (err error) {
 		}
 		for ; count > 0; count-- {
 			// Consume one item type each time
-			if err = e.doRun(depth, pc, innerSetter); err != nil {
+			if err = e.runMethod(pc, innerSetter); err != nil {
 				return err
 			}
 		}
 	}
 }
 
-func readInput(dataType Type, input ByteReader) (obj interface{}, err error) {
-	switch dataType {
+// readInput is a convenience function for calling the appropriate reader, depending
+// on the data type of the instruction invoking the read. Type 'acc' is not covered
+// here, because the accumulator is not read from the program input.
+func readInput(inst Instruction, input io.Reader) (obj interface{}, err error) {
+	switch inst.tp {
 	case TypeNull:
 		return nil, nil
 	case TypeBool:
@@ -197,6 +165,8 @@ func readInput(dataType Type, input ByteReader) (obj interface{}, err error) {
 		return readString(input)
 	case TypeBytes:
 		return readBytes(input)
+	case TypeFixed:
+		return readFixed(input, int(inst.val.(int64)))
 	}
-	return nil, fmt.Errorf("bad data type %x", dataType)
+	return nil, fmt.Errorf("unable to read data of type %s from input", inst.tp)
 }
