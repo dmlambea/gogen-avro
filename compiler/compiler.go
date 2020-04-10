@@ -18,7 +18,7 @@ type compiler struct {
 	errors  []string
 }
 
-func (c compiler) getOrCreateError(msg string) int {
+func (c *compiler) getOrCreateError(msg string) int {
 	for i := range c.errors {
 		if c.errors[i] == msg {
 			return i
@@ -28,7 +28,7 @@ func (c compiler) getOrCreateError(msg string) int {
 	return len(c.errors) - 1
 }
 
-func (c compiler) compileType(m *method, wrt, rdr schema.GenericType) (err error) {
+func (c *compiler) compileType(m *method, wrt, rdr schema.GenericType) (err error) {
 	// If the writer is not a union/optional type but the reader is, try and find
 	// the first matching type in the reader as a target.
 	if rdr != nil && !isUnionType(wrt) && isUnionType(rdr) {
@@ -54,9 +54,9 @@ func (c compiler) compileType(m *method, wrt, rdr schema.GenericType) (err error
 		}
 		return nil
 	case *schema.FixedType:
-		panic("fixed types are not implemented yet")
+		return c.compileFixed(m, wrtType, rdr)
 	case *schema.EnumType:
-		panic("enum types are not implemented yet")
+		return c.compileEnum(m, wrtType, rdr)
 	case *schema.UnionType:
 		return c.compileUnion(m, wrtType, rdr)
 	case *schema.MapType:
@@ -85,7 +85,7 @@ func (c compiler) compileType(m *method, wrt, rdr schema.GenericType) (err error
 	return fmt.Errorf("unsupported type %t", wrt)
 }
 
-func (c compiler) compilePrimitive(m *method, wrt, rdr schema.GenericType) error {
+func (c *compiler) compilePrimitive(m *method, wrt, rdr schema.GenericType) error {
 	if rdr != nil && !wrt.IsReadableBy(rdr, make(schema.VisitMap)) {
 		return fmt.Errorf("incompatible types %s and %s", wrt.Name(), rdr.Name())
 	}
@@ -102,8 +102,7 @@ func (c compiler) compilePrimitive(m *method, wrt, rdr schema.GenericType) error
 }
 
 // compileBlock compiles a map or array type block
-// TODO: create a special 'discard block' opType to discard block-type data
-func (c compiler) compileBlock(m *method, wrt, rdr schema.GenericType) (err error) {
+func (c *compiler) compileBlock(m *method, wrt, rdr schema.GenericType) (err error) {
 	discardMode := rdr == nil
 	loopPos := m.block()
 
@@ -139,7 +138,26 @@ func (c compiler) compileBlock(m *method, wrt, rdr schema.GenericType) (err erro
 	return nil
 }
 
-func (c compiler) compileRecord(m *method, wrt, rdr *schema.RecordType) (err error) {
+func (c *compiler) compileEnum(m *method, wrt *schema.EnumType, rdr schema.GenericType) (err error) {
+	if rdr != nil {
+		m.append(vm.Mov(vm.TypeInt))
+	} else {
+		m.append(vm.Discard(vm.TypeInt))
+	}
+	return
+}
+
+func (c *compiler) compileFixed(m *method, wrt *schema.FixedType, rdr schema.GenericType) (err error) {
+	amount := int64(wrt.SizeBytes())
+	if rdr != nil {
+		m.append(vm.MovFixed(amount))
+	} else {
+		m.append(vm.DiscardFixed(amount))
+	}
+	return
+}
+
+func (c *compiler) compileRecord(m *method, wrt, rdr *schema.RecordType) (err error) {
 	var rdrFields []schema.GenericType
 	if rdr != nil {
 		rdrFields = rdr.Children()
@@ -204,7 +222,7 @@ func (c compiler) compileRecord(m *method, wrt, rdr *schema.RecordType) (err err
 	return nil
 }
 
-func (c compiler) compileUnion(m *method, wrt *schema.UnionType, rdr schema.GenericType) (err error) {
+func (c *compiler) compileUnion(m *method, wrt *schema.UnionType, rdr schema.GenericType) (err error) {
 	var rdrFields []schema.GenericType
 	if rdr != nil {
 		if ct, ok := rdr.(schema.CompositeType); ok {
@@ -244,9 +262,15 @@ func (c compiler) compileUnion(m *method, wrt *schema.UnionType, rdr schema.Gene
 	if wrt.IsOptional() {
 		// This jmp's rel offset has to be corrected later
 		skipJmpPos = m.Size()
-		m.append(vm.JmpEq(int64(wrt.OptionalIndex()), 0))
+		m.append(vm.SkipCase(0, 0))
 	}
-	m.append(vm.Mov(vm.TypeAcc))
+
+	// Optional unions with only one another type are deserialized directly over a typed field.
+	// Non-optional unions, or those with more than two types, need a BaseUnion struct to hold
+	// the discriminator, so the loaded accum must be setted into it.
+	if !wrt.IsOptional() || len(order) > 2 {
+		m.append(vm.Mov(vm.TypeAcc))
+	}
 
 	sw := newSwitch()
 	for i := range order {
@@ -279,14 +303,14 @@ func (c compiler) compileUnion(m *method, wrt *schema.UnionType, rdr schema.Gene
 	if skipJmpPos > -1 {
 		// Fix the optional jmp from the beginning
 		jmpPos := m.Size() - skipJmpPos - 1
-		m.code[skipJmpPos] = vm.JmpEq(int64(wrt.OptionalIndex()), jmpPos)
+		m.code[skipJmpPos] = vm.SkipCase(int64(wrt.OptionalIndex()), jmpPos)
 	}
 	return nil
 }
 
 // compileNonUnionToUnion tries to find the first matching field in the reader
 // for the giver writer type.
-func (c compiler) compileNonUnionToUnion(m *method, wrt schema.GenericType, rdr *schema.UnionType) (err error) {
+func (c *compiler) compileNonUnionToUnion(m *method, wrt schema.GenericType, rdr *schema.UnionType) (err error) {
 	for _, child := range rdr.Children() {
 		childType := child.(*schema.FieldType).Type()
 		if !wrt.IsReadableBy(childType, make(schema.VisitMap)) {
@@ -316,7 +340,7 @@ func (c *compiler) getOrCreateMethodFor(w, r schema.GenericType) (*method, bool)
 	return typeMethod, !ok
 }
 
-func (c compiler) discard(m *method, t schema.GenericType) error {
+func (c *compiler) discard(m *method, t schema.GenericType) error {
 	switch t.(type) {
 	case *schema.RecordType, *schema.MapType, *schema.ArrayType:
 		return c.compileType(m, t, nil)
