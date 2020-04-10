@@ -1,12 +1,12 @@
 0:	load
 1:	mov acc
-2:	jmpEq 0	--> 7 [10]
-3:	jmpEq 1	--> 8 [12]
-4:	jmpEq 2	--> 9 [14]
-5:	jmpEq 3	--> 10 [16]
-6:	jmpEq 4	--> 11 [18]
-7:	jmpEq 5	--> 12 [20]
-8:	jmpEq 6	--> 13 [22]
+2:	case 0	--> 7 [10]
+3:	case 1	--> 8 [12]
+4:	case 2	--> 9 [14]
+5:	case 3	--> 10 [16]
+6:	case 4	--> 11 [18]
+7:	case 5	--> 12 [20]
+8:	case 6	--> 13 [22]
 9:	halt (0)
 10:	mov bool
 11:	jmp	--> 11 [23]
@@ -22,3 +22,4 @@
 21:	jmp	--> 1 [23]
 22:	mov bytes
 23:	ret
+err 0:	invalid index for union

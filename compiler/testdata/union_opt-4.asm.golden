@@ -1,7 +1,7 @@
 0:	load
-1:	jmpEq 0	--> 4 [6]
-2:	mov acc
-3:	jmpEq 1	--> 1 [5]
-4:	halt (0)
-5:	mov double
-6:	ret
+1:	skipCase 0	--> 3 [5]
+2:	case 1	--> 1 [4]
+3:	halt (0)
+4:	mov double
+5:	ret
+err 0:	invalid index for union
