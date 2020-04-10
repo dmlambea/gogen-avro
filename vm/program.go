@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"strings"
@@ -12,18 +13,24 @@ func NewProgram(instructions []Instruction, errorMessages []string) Program {
 }
 
 // NewProgramFromBytecode compiles bytecode onto a runnable program
-func NewProgramFromBytecode(byteCode []byte) (Program, error) {
-	p := Program{}
-	for i, pos := 0, 0; i < len(byteCode); {
-		inst := decodeInstruction(byteCode[i:])
-		if inst.op == OpError {
-			return p, fmt.Errorf("bad instruction %#v at byteCode pos %d", inst, i)
+func NewProgramFromBytecode(byteCode []byte) (p Program, err error) {
+	buf := bytes.NewBuffer(byteCode)
+	totalBytes := len(byteCode)
+	for {
+		var inst Instruction
+		err = inst.readFrom(buf)
+		if err == nil && inst.op == OpError {
+			err = fmt.Errorf("bad instruction %#v at byteCode pos %d", inst, totalBytes-buf.Len())
+		}
+		if err != nil {
+			break
 		}
 		p.instructions = append(p.instructions, inst)
-		i += inst.Size()
-		pos++
 	}
-	return p, nil
+	if err == io.EOF {
+		err = nil
+	}
+	return
 }
 
 // Program holds the instruction and error codes for a given program
