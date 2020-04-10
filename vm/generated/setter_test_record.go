@@ -5,11 +5,30 @@
  */
 package generated
 
-type SetterTestRecord struct {
+type OrderedSetterTestRecord struct {
 	AInt    int32
 	OptInt  *int32
 	NilInt  *int32
 	hidden  string
 	Node    Node
 	OptAddr *Address
+}
+
+type ReorderedSetterTestRecord struct {
+	OptAddr *Address
+	Node    Node
+	hidden  string
+	NilInt  *int32
+	OptInt  *int32
+	AInt    int32
+}
+
+type Node struct {
+	Name string
+	Addr *Address
+}
+
+type Address struct {
+	Id   int32
+	Next *Address
 }

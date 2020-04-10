@@ -5,11 +5,11 @@
  */
 package generated
 
-type SimpleMapTestRecord struct {
+type SimpleMapRecord struct {
 	AInt  int32
-	Nodes map[string]Nested
+	Nodes map[string]NestedValue
 }
 
-type Nested struct {
+type NestedValue struct {
 	Val string
 }

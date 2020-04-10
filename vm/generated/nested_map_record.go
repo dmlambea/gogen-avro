@@ -5,13 +5,13 @@
  */
 package generated
 
-type SetterMapTestRecord struct {
+type NestedMapRecord struct {
 	AInt   int32
 	OptInt *int32
-	Nodes  map[string]NestedMapRecord
+	Nodes  map[string]NumberMap
 }
 
-type NestedMapRecord struct {
+type NumberMap struct {
 	Index   float32
 	Numbers map[string]int32
 }
