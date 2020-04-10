@@ -11,31 +11,24 @@ import (
 
 func TestProgram(t *testing.T) {
 	instructionSet := []vm.Instruction{
+		vm.Ret(),
 		vm.Halt(0),
 		vm.Load(),
 		vm.Skip(),
 		vm.EndBlock(),
-		vm.Ret(),
 
 		// 2-byte instructions
-		vm.Mov(vm.TypeInt),
+		vm.Mov(vm.TypeAcc),
 		vm.Jmp(5),
 		vm.Record(-4),
 		vm.Discard(vm.TypeString),
 		vm.Block(6),
 
 		// 3-byte instructions
-		vm.MovEq(1, vm.TypeInt),
-		vm.JmpEq(1, 2),
-		vm.RecordEq(1, -4),
+		vm.Case(1, 2),
+		vm.SkipCase(0, 3),
 		vm.DiscardBlock(-10),
 		vm.DiscardRecord(-10),
-		vm.DiscardEq(1, vm.TypeString),
-		vm.BlockEq(1, 1),
-
-		// 4-byte instructions
-		vm.DiscardEqBlock(1, -8),
-		vm.DiscardEqRecord(1, -8),
 
 		// n-byte instructions
 		vm.Sort([]int{3, 2, 1, 0}),

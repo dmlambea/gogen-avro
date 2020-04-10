@@ -14,39 +14,40 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type unionStringIntNodeFixture struct {
+type unionNullStringIntNodeFixture struct {
 	input    []byte
 	expected generated.UnionStringIntNode
 }
 
 var (
-	unionStringIntNodeReaderProgram = []vm.Instruction{
-		vm.Load(),
-		vm.JmpEq(0, 10),
-		vm.Mov(vm.TypeAcc),
-		vm.JmpEq(1, 3),
-		vm.JmpEq(2, 4),
-		vm.JmpEq(3, 5),
-		vm.Halt(0),
-		vm.Mov(vm.TypeString),
-		vm.Jmp(3),
-		vm.Mov(vm.TypeInt),
-		vm.Jmp(1),
-		vm.Record(1),
-		vm.Ret(),
-		vm.Mov(vm.TypeString),
-		vm.RecordEq(1, 1),
-		vm.Ret(),
-		vm.Mov(vm.TypeInt),
-		vm.RecordEq(1, -2),
-		vm.Ret(),
-	}
+	unionNullStringIntNodeSchema = `["null", "string", "int", {
+		"name": "node",
+		"type": "record",
+		"fields": [{
+			"name": "name",
+			"type": "string"
+		}, {
+			"name": "addr",
+			"type": {
+				"name": "address",
+				"type": "record",
+				"fields": [{
+					"name": "id",
+					"type": "int"
+				}, {
+					"name": "next",
+					"type": ["null", "address"]
+				}]
+			}
+		}]
+	}]
+	`
 
-	unionStringIntNodeFixtures = []unionStringIntNodeFixture{
+	unionNullStringIntNodeFixtures = []unionNullStringIntNodeFixture{
 		{input: []byte{0}, expected: generated.UnionStringIntNode{}},
 		{input: []byte{2, 8, 'T', 'e', 's', 't'}, expected: generated.UnionStringIntNode{setters.BaseUnion{Type: 1, Value: "Test"}}},
 		{input: []byte{4, 84}, expected: generated.UnionStringIntNode{setters.BaseUnion{Type: 2, Value: int32(42)}}},
-		{input: []byte{6, 12, 'N', 'o', 'd', 'e', '-', '1', 2, 2, 0}, expected: generated.UnionStringIntNode{
+		{input: []byte{6, 12, 'N', 'o', 'd', 'e', '-', '1', 2, 0}, expected: generated.UnionStringIntNode{
 			setters.BaseUnion{
 				3,
 				generated.Node{
@@ -59,18 +60,19 @@ var (
 )
 
 func TestUnion(t *testing.T) {
-	p := vm.NewProgram(unionStringIntNodeReaderProgram, []string{"bad union index"})
+	p, err := compiler.CompileSchemaBytes([]byte(unionNullStringIntNodeSchema), []byte(unionNullStringIntNodeSchema))
+	require.Nil(t, err)
 
-	for i, f := range unionStringIntNodeFixtures {
+	engine := vm.Engine{
+		Program:     p,
+		StackTraces: true,
+	}
+
+	for i, f := range unionNullStringIntNodeFixtures {
 		var obj generated.UnionStringIntNode
 
-		objSetter, err := setters.NewSetterFor(&obj)
-		require.Nil(t, err)
-		require.NotNil(t, objSetter)
-
 		buf := bytes.NewBuffer(f.input)
-		engine := vm.NewEngine(p, objSetter)
-		err = engine.Run(buf)
+		err = engine.Run(buf, &obj)
 		require.Nil(t, err)
 
 		assert.Equal(t, f.expected, obj, fmt.Sprintf("Union %d fails", i))
@@ -78,19 +80,20 @@ func TestUnion(t *testing.T) {
 }
 
 func TestUnionError(t *testing.T) {
-	p := vm.NewProgram(unionStringIntNodeReaderProgram, []string{"bad union index"})
+	p, err := compiler.CompileSchemaBytes([]byte(unionNullStringIntNodeSchema), []byte(unionNullStringIntNodeSchema))
+	require.Nil(t, err)
+
+	engine := vm.Engine{
+		Program:     p,
+		StackTraces: false,
+	}
 
 	var obj generated.UnionStringIntNode
 
-	objSetter, err := setters.NewSetterFor(&obj)
-	require.Nil(t, err)
-	require.NotNil(t, objSetter)
-
 	buf := bytes.NewBuffer([]byte{8}) // 8 is zigzag-encoded value for 4
-	engine := vm.NewEngine(p, objSetter)
-	err = engine.Run(buf)
+	err = engine.Run(buf, &obj)
 	require.NotNil(t, err)
-	assert.Equal(t, "execution halted: bad union index", err.Error(), "bad error message")
+	assert.Equal(t, "execution halted: invalid index for union", err.Error(), "bad error message")
 }
 
 type sortedUnion struct {
@@ -122,16 +125,16 @@ func TestSortedUnion(t *testing.T) {
 	var obj sortedUnion
 
 	for i := range writerSchemas {
-		prog, err := compiler.CompileSchemaBytes([]byte(writerSchemas[i]), []byte(readerSchemas[i]))
+		p, err := compiler.CompileSchemaBytes([]byte(writerSchemas[i]), []byte(readerSchemas[i]))
 		require.Nil(t, err)
 
-		objSetter, err := setters.NewSetterFor(&obj)
-		require.Nil(t, err)
-		require.NotNil(t, objSetter)
+		engine := vm.Engine{
+			Program:     p,
+			StackTraces: true,
+		}
 
 		buf := bytes.NewBuffer([]byte{02, 84}) // Writer's second field of the union, value 42
-		engine := vm.NewEngine(prog, objSetter)
-		err = engine.Run(buf)
+		err = engine.Run(buf, &obj)
 		require.Nil(t, err)
 
 		assert.Equal(t, obj.Type, int64(1), fmt.Sprintf("Union %d: wrong union type %d", i, obj.Type))
