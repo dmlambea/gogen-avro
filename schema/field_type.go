@@ -1,6 +1,9 @@
 package schema
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 func NewField(name string, itemType GenericType, index int) *FieldType {
 	t := &FieldType{index: index}
@@ -30,11 +33,22 @@ func (t *FieldType) HasDefault() bool {
 	return false
 }
 
+func (t *FieldType) Name() string {
+	return DefaultNamer.ToPublicName(t.QName().String())
+}
+
 func (t *FieldType) GoType() string {
 	child := t.Type()
 	var str strings.Builder
-	if child.IsOptional() {
+
+	if t.IsOptional() {
 		str.WriteString("*")
+	}
+
+	if t.IsSimple() {
+		u := child.(*UnionType)
+		str.WriteString(u.Children()[u.NonOptionalIndex()].GoType())
+		return str.String()
 	}
 
 	if ct, ok := child.(ComplexType); ok {
@@ -46,26 +60,49 @@ func (t *FieldType) GoType() string {
 }
 
 func (t *FieldType) SerializerMethod() string {
+	if t.IsSimple() {
+		u := t.Type().(*UnionType)
+		return u.Children()[u.NonOptionalIndex()].SerializerMethod()
+	}
 	return t.Type().SerializerMethod()
 }
 
 func (t *FieldType) IsOptional() bool {
-	return t.Type().IsOptional()
+	u, ok := t.Type().(*UnionType)
+	if !ok {
+		return false
+	}
+	return u.IsOptional()
 }
 
-func (t *FieldType) IsUnion() bool {
-	return t.Type().IsUnion()
+func (t *FieldType) IsSimple() bool {
+	u, ok := t.Type().(*UnionType)
+	if !ok {
+		return false
+	}
+	return u.IsSimple()
 }
 
 func (t *FieldType) OptionalIndex() int {
-	return t.Type().OptionalIndex()
+	u, ok := t.Type().(*UnionType)
+	if !ok {
+		panic(fmt.Sprintf("field %s is not a union type", t.Name()))
+	}
+	return u.OptionalIndex()
 }
 
 func (t *FieldType) NonOptionalIndex() int {
-	return t.Type().NonOptionalIndex()
+	u, ok := t.Type().(*UnionType)
+	if !ok {
+		panic(fmt.Sprintf("field %s is not a union type", t.Name()))
+	}
+	return u.NonOptionalIndex()
 }
 
 func (t *FieldType) IsReadableBy(other GenericType, visited VisitMap) bool {
+	if fld, ok := other.(*FieldType); ok {
+		return t.Type().IsReadableBy(fld, visited)
+	}
 	return t.Type().IsReadableBy(other, visited)
 }
 

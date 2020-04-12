@@ -1,6 +1,9 @@
 package schema
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 const (
 	unionNameFormat = "Union%s"
@@ -8,8 +11,9 @@ const (
 
 func NewUnionField(itemTypes []GenericType) *UnionType {
 	t := &UnionType{}
-	t.setFormatters(unionNameFormat, "")
 	t.setItemTypes(itemTypes)
+	unionName := t.generateUnionName()
+	t.setFormatters(unionName, unionName)
 	return t
 }
 
@@ -22,12 +26,44 @@ var (
 
 type UnionType struct {
 	multiChildComponent
+
+	// Internally, optIndex is a positional index plus one of the null type within
+	// an optional union in order to keep zero-value useful (0 = non-optional union).
+	optIndex int
 }
 
-// Convenience function for telling the template this field is a union field, and therefore
-// it might contain several non-optional children.
-func (t *UnionType) IsUnion() bool {
-	return true
+// generateUnionName must return a generated name for unions, which depends on its child types
+func (t *UnionType) generateUnionName() string {
+	var str strings.Builder
+	for _, item := range t.itemTypes {
+		str.WriteString(item.Name())
+	}
+	return fmt.Sprintf(unionNameFormat, str.String())
+}
+
+// IsOptional returns true if this union has a null-type option
+func (t *UnionType) IsOptional() bool {
+	return t.optIndex > 0
+}
+
+// IsSimple returns true if this union is optional and has only one another type
+func (t *UnionType) IsSimple() bool {
+	return t.IsOptional() && len(t.Children()) == 2
+}
+
+// SetOptionalIndex marks the positional index of the null type
+func (t *UnionType) SetOptionalIndex(idx int) {
+	t.optIndex = idx + 1
+}
+
+// OptionalIndex returns the index of the null type
+func (t *UnionType) OptionalIndex() int {
+	return t.optIndex - 1
+}
+
+// NonOptionalIndex has meaning on simple unions and returns the index of the non-null type.
+func (t *UnionType) NonOptionalIndex() int {
+	return 1 - (t.optIndex - 1)
 }
 
 func (t *UnionType) SerializerMethod() string {
@@ -35,12 +71,12 @@ func (t *UnionType) SerializerMethod() string {
 }
 
 func (t *UnionType) IsReadableBy(other GenericType, visited VisitMap) bool {
-	// Check the optional case, when the field is a null type
-	if other.IsOptional() {
-		return t.IsOptional()
-	}
-
 	u, otherIsUnion := other.(*UnionType)
+
+	// Check the optional case for both unions
+	if otherIsUnion && t.IsOptional() {
+		return true
+	}
 
 	// Report if *any* writer type could be deserialized by the reader
 	for _, child := range t.Children() {
