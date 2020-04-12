@@ -2,45 +2,46 @@ package templates
 
 const EnumTemplate = `
 import (
-	"fmt"
 	"io"
 
 	"github.com/actgardner/gogen-avro/vm"
 )
 
-{{ if ne .Doc "" }}
-// {{ .Doc}}
-{{ end }}  
-type {{ .GoType }} int32
+{{ if ne .Doc "" -}}
+// {{ .Doc }}
+{{ end -}}
+type {{ .Name }} int32
 
 const (
-{{ range $i, $symbol := .Symbols }}
-	{{ $.SymbolName $symbol }} {{ $.GoType }} = {{ $i }}
-{{ end }}
+{{- range $i, $symbol := .Symbols }}
+	{{ $.Name }}{{ $symbol }} {{ $.Name }} = {{ $i }}
+{{- end }}
 )
 
-func (e {{ .GoType  }}) String() string {
+func (e {{ .Name  }}) String() string {
 	switch e {
-{{ range $i, $symbol := .Symbols }}
-	case {{ $.SymbolName $symbol }}:
-		return {{ printf "%q" $symbol }}
-{{ end }}
+{{- range $i, $s := .Symbols }}
+	case {{ $.Name }}{{ $s }}:
+		return "{{ $s }}"
+{{- end }}
+	default:
+		return ""
 	}
-	return "unknown"
 }
 
-func {{ .SerializerMethod }}(r {{ .GoType }}, w io.Writer) error {
-	return vm.WriteInt(int32(r), w)
-}
-
-func New{{ .GoType }}Value(raw string) (r {{ .GoType }}, err error) {
-	switch raw {
-{{ range $i, $symbol := .Symbols }}
-	case {{ printf "%q" $symbol }}:
-		return {{ $.SymbolName $symbol }}, nil
-{{ end }}
+func (e {{ .Name  }}) FromString(symbol string) ({{ .Name }}, error) {
+	switch symbol {
+{{- range $i, $s := .Symbols }}
+	case "{{ $s }}":
+		return {{ $.Name }}{{ $s }}, nil
+{{- end }}
+	default:
+		panic("invalid symbol for {{ .Name }}")
 	}
-
-	return -1, fmt.Errorf("invalid value for {{ $.GoType }}: '%s'", raw)
 }
+
+func write{{ .Name }}(e {{ .Name }}, w io.Writer) (err error) {
+	return vm.WriteInt(int32(e), w)
+}
+
 `

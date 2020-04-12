@@ -2,70 +2,77 @@ package templates
 
 const UnionTemplate = `
 import (
-	"errors"
+	"fmt"
 	"io"
+	"reflect"
 
 	"github.com/actgardner/gogen-avro/vm"
-	"github.com/actgardner/gogen-avro/vm/types"
+	"github.com/actgardner/gogen-avro/vm/setters"
 )
 
+type {{ .GoType }}Type int64
 
-type {{ .UnionEnumType }} int
+const (
+{{- range $i, $child := .Children }}
+	{{- if $.OptionalIndex | ne $i }}
+	{{ $.GoType }}Type{{ $child.Name }} {{ $.GoType }}Type = {{ $i }}
+	{{- end }}
+{{- end }}
+)
 
-const ({{ range $i, $t := .Children }}{{ if $.OptionalIndex | ne $i }}
-	{{ $.UnionEnumType }}{{ .Name }} {{ $.UnionEnumType }} = {{ $i }}
-{{ end }}{{ end }})
-
-type {{ .Name }} struct { {{ range $i, $t := .ItemTypes }}
-	{{ .Name }} {{ .GoType }}
-{{ end }}
-	UnionType {{ $.UnionEnumType }}
+type {{ .Name }} struct {
+	setters.BaseUnion
 }
 
-func {{ .SerializerMethod }}(r {{ .GoType }}, w io.Writer) error { {{ if .IsOptional }}
-	if r == nil {
-		return vm.WriteLong(int64({{ .OptionalIndex }}), w)
-	} {{ end }}
-	if err := vm.WriteLong(int64(r.UnionType), w); err != nil {
-		return err
+func (u *{{ .Name }}) Set(value interface{}) {
+	switch t := value.(type) {
+{{- range $i, $child := .Children }}
+	{{- if $.OptionalIndex | ne $i }}
+	case {{ $child.GoType }}:
+		u.Type = int64({{ $i }})
+	{{- end }}
+{{- end }}
+	default:
+		panic(fmt.Sprintf("invalid union type %T for {{ .Name }}", t))
 	}
-	switch r.UnionType{ {{ range $i, $t := .ItemTypes }}
-	case {{ $.ItemName $t }}:
-		return {{ .SerializerMethod }}(r.{{ .Name }}, w){{ end }}
+	u.Value = value
+}
+
+func write{{ .Name }}(u {{ if .IsOptional }}*{{ end }}{{ .Name }}, w io.Writer) (err error) {
+	{{- if .IsOptional }}
+	if u == nil {
+		return vm.WriteLong({{ .OptionalIndex }}, w)
+	}{{- end }}
+	if err = vm.WriteLong(u.Type, w); err != nil {
+		return
 	}
-	return errors.New("invalid value for {{ .GoType }}")
-}
 
-func (_ *{{ .Name }}) SetBoolean(v bool) { panic("Unsupported operation") }
-func (_ *{{ .Name }}) SetInt(v int32) { panic("Unsupported operation") }
-func (_ *{{ .Name }}) SetFloat(v float32) { panic("Unsupported operation") }
-func (_ *{{ .Name }}) SetDouble(v float64) { panic("Unsupported operation") }
-func (_ *{{ .Name }}) SetBytes(v []byte) { panic("Unsupported operation") }
-func (_ *{{ .Name }}) SetString(v string) { panic("Unsupported operation") }
-
-func (r *{{ .Name }}) SetLong(v int64) { 
-	r.UnionType = ({{ .UnionEnumType }})(v)
-}
-
-func (r *{{ .Name }}) Get(i int) types.Field {
-	switch (i) { {{ range $i, $t := .Children }}{{ if $.OptionalIndex | ne $i }}
-	case {{ $i }}:
-		{{ if $.ItemConstructor $t | ne "" }}
-		r.{{ .Name }} = {{ $.ItemConstructor $t }}
-		{{ end }}
-		{{ if eq .WrapperType "" }}
-		return &r.{{ .Name }}
-		{{ else }}
-		return (*{{ .WrapperType }})(&r.{{ .Name }})
-		{{ end }}
-	{{ end }}{{ end }}
+	switch {{ .GoType }}Type(u.Type) {
+{{- range $i, $child := .Children }}
+	{{- if $.OptionalIndex | ne $i }}
+	case {{ $.GoType }}Type{{ $child.Name }}:
+		err = {{ $child.SerializerMethod }}(u.Value, w)
+	{{- end }}
+{{- end }}
+	default:
+		panic("invalid union type for {{ .Name }}")
 	}
-	panic("Unknown field index")
+	return
 }
 
-func (r *{{ .Name }}) Clear(i int) { panic("Unsupported operation") }
-func (_ *{{ .Name }}) SetDefault(i int) { panic("Unsupported operation") }
-func (_ *{{ .Name }}) AppendMap(key string) types.Field { panic("Unsupported operation") }
-func (_ *{{ .Name }}) AppendArray() types.Field { panic("Unsupported operation") }
-func (_ *{{ .Name }}) Finalize()  { }
+func (u {{ .Name }}) UnionTypes() []reflect.Type {
+	return typesFor{{ .Name }}
+}
+
+var (
+	typesFor{{ .Name }} = []reflect.Type{
+{{- range $i, $child := .Children }}
+	{{- if $.OptionalIndex | ne $i }}
+		reflect.TypeOf((*{{$child.Type.GoType}})(nil)),
+	{{- else }}
+		reflect.TypeOf(nil),
+	{{- end }}
+{{- end }}	
+	}
+)
 `
