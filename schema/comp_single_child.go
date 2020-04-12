@@ -20,8 +20,16 @@ type singleChildComponent struct {
 	multiChildComponent
 }
 
+func (comp *singleChildComponent) Name() string {
+	return fmt.Sprintf(comp.nameFmt, comp.Type().Name())
+}
+
+func (comp *singleChildComponent) GoType() string {
+	return fmt.Sprintf(comp.goTypeFmt, comp.Type().GoType())
+}
+
 func (comp *singleChildComponent) SerializerMethod() string {
-	panic("Complex, single-child types must implement their own SerializerMethod")
+	return fmt.Sprintf("write%s", comp.Name())
 }
 
 func (comp *singleChildComponent) Type() GenericType {
