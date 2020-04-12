@@ -58,6 +58,9 @@ func TestIsReadableBy(t *testing.T) {
 
 		// An optional union can be read by another optional union
 		{`["null", "string"]`, `["int", "null"]`, true},
+
+		// An optional union can be read by another optional union
+		{`["null", "string", "int"]`, `["long", "string", "null"]`, true},
 	}
 
 	for i, c := range cases {
