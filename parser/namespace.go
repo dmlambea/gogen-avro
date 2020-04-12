@@ -285,21 +285,18 @@ func (n *Namespace) decodeUnion(name, namespace string, schemaList []interface{}
 		decodedFields[i] = schema.NewField(fieldType.Name(), fieldType, i)
 	}
 
-	if len(decodedFields) != 2 || nullFieldFoundAt < 0 {
-		result, err = schema.NewUnionField(decodedFields), nil
-	} else {
-		result, err = decodedFields[1-nullFieldFoundAt].(*schema.FieldType).Type(), nil
-	}
-	if err == nil {
-		result.SetOptionalIndex(nullFieldFoundAt)
+	var u *schema.UnionType
+	if u, err = schema.NewUnionField(decodedFields), nil; err == nil {
+		u.SetOptionalIndex(nullFieldFoundAt)
+		result = u
 	}
 	return
 }
 
 // getTypeByName returns the type associated with a type name, mostly primitive types, but also qnamed, registered types.
-func (n *Namespace) getTypeByName(typeStr, namespace string) (t schema.GenericType) {
-	if t = schema.NewPrimitiveType(typeStr); t != nil {
-		return
+func (n *Namespace) getTypeByName(typeStr, namespace string) schema.GenericType {
+	if t := schema.NewPrimitiveType(typeStr); t != nil {
+		return t
 	}
 	// Non-primitive type: create a reference
 	qname := fixQName(schema.QName{Name: typeStr, Namespace: namespace})
