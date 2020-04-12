@@ -90,15 +90,16 @@ func (s *fieldListSetter) Execute(op OperationType, value interface{}) (err erro
 	}
 
 	// Only SetField makes sense to execute. SkipField always succeeds.
+	var setterCreated bool
 	err = nil
 	if op == SetField {
 		fldValue := reflect.ValueOf(fld)
 		if fldValue.Kind() != reflect.Ptr {
 			return ErrTypeNotSupported
 		}
-		err = s.setPointerElem(fldValue.Elem(), value)
+		setterCreated, err = s.setPointerElem(fldValue.Elem(), value)
 	}
-	if err == nil {
+	if err == nil && !setterCreated {
 		s.goNext()
 	}
 	return
@@ -135,8 +136,9 @@ func (s *fieldListSetter) getCurrentField() (fld interface{}, err error) {
 	return
 }
 
-// setPointerElem sets the value into the current field, which must be a pointer.
-func (s *fieldListSetter) setPointerElem(elem reflect.Value, value interface{}) error {
+// setPointerElem sets the value into the current field, which must be a pointer. Returns true
+// if a new inner setter was created fo setting the field.
+func (s *fieldListSetter) setPointerElem(elem reflect.Value, value interface{}) (bool, error) {
 	// If the target elem is an indirection, its pointer must be created first and it could
 	// probably become a Setter.
 	innerSetter, err := createPointerToStructReflectValueSetter(elem)
@@ -144,25 +146,25 @@ func (s *fieldListSetter) setPointerElem(elem reflect.Value, value interface{}) 
 	case nil:
 		// Make setter final
 		s.set(s.currentField, innerSetter)
-		return s.executeNested(SetField, value, innerSetter)
+		return true, s.executeNested(SetField, value, innerSetter)
 	case ErrNotSetter:
 		// Point to the target item type, then wait for the Set below
 		elem = elem.Elem()
 	case ErrNonPointer:
 		// Nothing, just wait for the Set below
 	default:
-		return err
+		return false, err
 	}
 
 	v := reflect.ValueOf(value)
 	if !v.Type().AssignableTo(elem.Type()) {
 		if !v.Type().ConvertibleTo(elem.Type()) {
-			return fmt.Errorf("incompatible types: %s cannot be assigned to %s", v.Type(), elem.Type())
+			return false, fmt.Errorf("incompatible types: %s cannot be assigned to %s", v.Type(), elem.Type())
 		}
 		v = v.Convert(elem.Type())
 	}
 	elem.Set(v)
-	return nil
+	return false, nil
 }
 
 func createPointerToStructFieldSetter(field interface{}) (inner Setter, err error) {

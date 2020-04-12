@@ -50,12 +50,14 @@ func (s *sliceSetter) Execute(op OperationType, value interface{}) (err error) {
 		return
 	}
 	valueElem := reflect.ValueOf(value)
-	fmt.Printf("Slice kind %s\n", valueElem.Kind())
 	if valueElem.Kind() != reflect.Slice && valueElem.Kind() != reflect.Array {
 		return ErrTypeNotSupported
 	}
 	s.sliceElem.Elem().Set(valueElem)
 	s.entries = 0 // Intentionally exhaust this setter
+	if s.hasExhaustCallback() {
+		s.trigger(s)
+	}
 	return
 }
 
