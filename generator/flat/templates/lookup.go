@@ -5,7 +5,7 @@ import (
 	"errors"
 	"text/template"
 
-	avro "github.com/actgardner/gogen-avro/schema"
+	"github.com/actgardner/gogen-avro/schema"
 )
 
 var NoTemplateForType = errors.New("No template exists for supplied type")
@@ -13,17 +13,17 @@ var NoTemplateForType = errors.New("No template exists for supplied type")
 func Template(t interface{}) (string, error) {
 	var template string
 	switch t.(type) {
-	case *avro.ArrayField:
+	case *schema.ArrayType:
 		template = ArrayTemplate
-	case *avro.MapField:
+	case *schema.MapType:
 		template = MapTemplate
-	case *avro.UnionField:
+	case *schema.UnionType:
 		template = UnionTemplate
-	case *avro.EnumDefinition:
+	case *schema.EnumType:
 		template = EnumTemplate
-	case *avro.FixedDefinition:
+	case *schema.FixedType:
 		template = FixedTemplate
-	case *avro.RecordDefinition:
+	case *schema.RecordType:
 		template = RecordTemplate
 	default:
 		return "", NoTemplateForType
