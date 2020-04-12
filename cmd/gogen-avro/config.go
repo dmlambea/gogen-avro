@@ -44,7 +44,7 @@ func parseCmdLine() config {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s [flags] <target directory> <schema files>\n\nWhere 'flags' are:\n", os.Args[0])
 		flag.PrintDefaults()
-		os.Exit(1)
+		os.Exit(exitBadCommandLine)
 	}
 	flag.Parse()
 	if flag.NArg() < 2 {
@@ -66,7 +66,7 @@ func parseCmdLine() config {
 		files, err := filepath.Glob(glob)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error parsing input file as glob: %v", err)
-			os.Exit(1)
+			os.Exit(exitBadCommandLine)
 		}
 		cfg.files = append(cfg.files, files...)
 	}
