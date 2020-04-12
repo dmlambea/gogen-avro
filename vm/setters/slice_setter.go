@@ -9,7 +9,7 @@ type sliceSetter struct {
 	exhaustNotifierComponent
 	entries   int
 	curEntry  int
-	sliceElem reflect.Value
+	slicePtr  reflect.Value
 	sliceType reflect.Type
 	item      reflect.Value
 	inner     Setter
@@ -17,7 +17,7 @@ type sliceSetter struct {
 
 func newSliceSetter(sliceAddr interface{}, sliceType reflect.Type) Setter {
 	s := &sliceSetter{
-		sliceElem: reflect.ValueOf(sliceAddr),
+		slicePtr:  reflect.ValueOf(sliceAddr),
 		sliceType: sliceType,
 	}
 	return s
@@ -36,10 +36,10 @@ func (s *sliceSetter) Init(arg interface{}) (err error) {
 	}
 
 	newSlice := reflect.MakeSlice(s.sliceType, s.entries, s.entries)
-	if !s.sliceElem.Elem().IsNil() {
-		newSlice = reflect.AppendSlice(s.sliceElem.Elem(), newSlice)
+	if !s.slicePtr.Elem().IsNil() {
+		newSlice = reflect.AppendSlice(s.slicePtr.Elem(), newSlice)
 	}
-	s.sliceElem.Elem().Set(newSlice)
+	s.slicePtr.Elem().Set(newSlice)
 	return
 }
 
@@ -53,7 +53,12 @@ func (s *sliceSetter) Execute(op OperationType, value interface{}) (err error) {
 	if valueElem.Kind() != reflect.Slice && valueElem.Kind() != reflect.Array {
 		return ErrTypeNotSupported
 	}
-	s.sliceElem.Elem().Set(valueElem)
+	switch s.slicePtr.Elem().Kind() {
+	case reflect.Slice:
+		s.slicePtr.Elem().Set(valueElem)
+	case reflect.Array:
+		reflect.Copy(s.slicePtr.Elem(), valueElem)
+	}
 	s.entries = 0 // Intentionally exhaust this setter
 	if s.hasExhaustCallback() {
 		s.trigger(s)
@@ -83,7 +88,7 @@ func (s *sliceSetter) GetInner() (inner Setter, err error) {
 
 func (s *sliceSetter) callbackEvent() {
 	if s.inner.IsExhausted() {
-		s.sliceElem.Elem().Index(s.curEntry).Set(s.item.Elem())
+		s.slicePtr.Elem().Index(s.curEntry).Set(s.item.Elem())
 		s.curEntry++
 		s.entries--
 		if s.entries == 0 {
