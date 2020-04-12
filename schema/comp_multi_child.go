@@ -1,10 +1,5 @@
 package schema
 
-import (
-	"fmt"
-	"strings"
-)
-
 var (
 	// Ensure interface implementations
 	_ ComplexType       = &multiChildComponent{}
@@ -13,7 +8,6 @@ var (
 )
 
 type multiChildComponent struct {
-	optionalComponent
 	nameFmt   string
 	goTypeFmt string
 	itemTypes []GenericType
@@ -21,18 +15,12 @@ type multiChildComponent struct {
 
 // *** Generic type implementation
 
-func (t *multiChildComponent) Name() string {
-	t.avoidDerreferencingUnresolvedRefs()
-	return t.formatItemID(t.nameFmt, func(item GenericType) string {
-		return item.Name()
-	})
+func (comp *multiChildComponent) Name() string {
+	return comp.nameFmt
 }
 
-func (t *multiChildComponent) GoType() string {
-	t.avoidDerreferencingUnresolvedRefs()
-	return t.formatItemID(t.goTypeFmt, func(item GenericType) string {
-		return item.GoType()
-	})
+func (comp *multiChildComponent) GoType() string {
+	return comp.goTypeFmt
 }
 
 func (t *multiChildComponent) SerializerMethod() string {
@@ -95,27 +83,6 @@ func (t *multiChildComponent) setItemTypes(itemTypes []GenericType) {
 	for _, item := range t.itemTypes {
 		if ref, ok := item.(*Reference); ok {
 			ref.AddResolver(t)
-		}
-	}
-}
-
-func (t *multiChildComponent) formatItemID(fmtStr string, idGetter func(item GenericType) string) string {
-	var str strings.Builder
-
-	for _, item := range t.itemTypes {
-		str.WriteString(idGetter(item))
-	}
-	if fmtStr == "" {
-		return str.String()
-	}
-	return fmt.Sprintf(fmtStr, str.String())
-}
-
-// Checks that there are no unresolved references among the children
-func (t *multiChildComponent) avoidDerreferencingUnresolvedRefs() {
-	for _, item := range t.itemTypes {
-		if ref, ok := item.(*Reference); ok {
-			panic(fmt.Sprintf("Unresolved reference '%s'", ref.Name()))
 		}
 	}
 }
