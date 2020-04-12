@@ -23,7 +23,6 @@ var (
 
 type EnumType struct {
 	namespaceComponent
-	optionalComponent
 	documentComponent
 	symbols []string
 }

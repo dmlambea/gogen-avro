@@ -23,7 +23,7 @@ var (
 		primitiveTypeFixture{avroName: "boolean", typeName: "Bool", goTypeName: "bool", compat: []string{"boolean"}},
 		primitiveTypeFixture{avroName: "bytes", typeName: "Bytes", goTypeName: "[]byte", compat: []string{"bytes", "string"}},
 		primitiveTypeFixture{avroName: "string", typeName: "String", goTypeName: "string", compat: []string{"string", "bytes"}},
-		primitiveTypeFixture{avroName: "null", typeName: "Null", goTypeName: "", compat: []string{"null"}},
+		primitiveTypeFixture{avroName: "null", typeName: "", goTypeName: "", compat: []string{"null"}},
 	})
 )
 
@@ -39,7 +39,6 @@ func createPrimitiveTypesMap(fixtures []primitiveTypeFixture) map[string]*primit
 
 // Common attributes for all types
 type primitiveType struct {
-	optionalComponent
 	name   string
 	goType string
 	compat []string
@@ -47,8 +46,7 @@ type primitiveType struct {
 
 var (
 	// Ensure interface implementation
-	_ GenericType  = &primitiveType{}
-	_ OptionalType = &primitiveType{}
+	_ GenericType = &primitiveType{}
 )
 
 func (p primitiveType) Name() string {
@@ -68,11 +66,6 @@ func (p primitiveType) SerializerMethod() string {
 }
 
 func (p primitiveType) IsReadableBy(other GenericType, visited VisitMap) bool {
-	// If both fields are optional, they are compatible
-	if p.IsOptional() && other.IsOptional() {
-		return true
-	}
-
 	for _, compTypeName := range p.compat {
 		if ct := NewPrimitiveType(compTypeName); ct != nil {
 			if other.GoType() == ct.GoType() {

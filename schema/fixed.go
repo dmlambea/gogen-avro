@@ -18,7 +18,6 @@ var (
 
 type FixedType struct {
 	namespaceComponent
-	optionalComponent
 	goType    string
 	sizeBytes uint64
 }
