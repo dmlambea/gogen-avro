@@ -6,6 +6,7 @@ func NewRecordField(qname QName, itemTypes []GenericType) *RecordType {
 	t := &RecordType{}
 	t.setQName(qname)
 	t.setItemTypes(itemTypes)
+	t.setFormatters(t.namespaceComponent.Name(), t.namespaceComponent.Name())
 	return t
 }
 
@@ -25,9 +26,8 @@ type RecordType struct {
 	schemaComponent
 }
 
-// Disambiguate Name method from ComplexType and NamespacedType
 func (t *RecordType) Name() string {
-	return DefaultNamer.ToPublicName(t.QName().String())
+	return t.multiChildComponent.Name()
 }
 
 func (t *RecordType) SerializerMethod() string {

@@ -1,7 +1,5 @@
 package schema
 
-import "fmt"
-
 const (
 	arrayNameFormat = "Array%s"
 	arrayTypeFormat = "[]%s"
@@ -26,17 +24,8 @@ type ArrayType struct {
 	singleChildComponent
 }
 
-func (t *ArrayType) SerializerMethod() string {
-	return fmt.Sprintf("write%s", t.Name())
-}
-
 func (t *ArrayType) IsReadableBy(other GenericType, visited VisitMap) bool {
-	// If both fields are optional, they are compatible
-	if t.IsOptional() && other.IsOptional() {
-		return true
-	}
-
-	if a, otherIsArray := other.(*ArrayType); otherIsArray {
+	if a, ok := other.(*ArrayType); ok {
 		return t.Type().IsReadableBy(a.Type(), visited)
 	}
 
